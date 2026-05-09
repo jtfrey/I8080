@@ -1,0 +1,43 @@
+/*
+ * I8080
+ * An implementation of the I8080 processor.
+ *
+ * Dr. Jeffrey Frey
+ * University of Delaware
+ *
+ * Baseline header includes and compile-time attributes of the
+ * project.
+ */
+
+#ifndef __I8080CONFIG_H__
+#define __I8080CONFIG_H__
+
+#include <curses.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <limits.h>
+#include <math.h>
+#include <errno.h>
+
+#define I8080_VERSION_STRING "@PROJECT_VERSION@"
+#define I8080_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define I8080_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define I8080_VERSION_PATCH @PROJECT_VERSION_PATCH@
+
+#cmakedefine I8080_STRIP_DEBUGGING
+
+#cmakedefine I8080_LOGGING_USE_PRETTY_FUNCTION
+#ifdef I8080_LOGGING_USE_PRETTY_FUNCTION
+#   define LOGGING_FUNC __PRETTY_FUNCTION__
+#else
+#   define LOGGING_FUNC __func__
+#endif
+
+#endif /* __I8080CONFIG_H__ */
