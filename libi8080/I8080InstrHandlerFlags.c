@@ -12,6 +12,7 @@
  
 #include "I8080InstrHandlerFlags.h"
 #include "I8080System.h"
+#include "I8080Logging.h"
 
 I8080CycleCount
 I8080InstrDispatchFlagsCY(
@@ -22,9 +23,11 @@ I8080InstrDispatchFlagsCY(
     if ( I8080InstrExt(instr, 3, 3) == 0 ) {
         // STC
         sys8080->rgstrs.CY = 0b1;
+        DEBUG("Set carry bit");
     } else {
         // CMC
         sys8080->rgstrs.CY ^= 0b1;
+        DEBUG("Complement of carry bit CY=%X", sys8080->rgstrs.CY);
     }
     return 4;
 }
@@ -52,10 +55,12 @@ I8080InstrDispatchFlagsINTE(
 {
     if ( I8080InstrExt(instr, 3, 3) == 0 ) {
         // EI
-        sys8080->rgstrs.INTE = 0b0;
+        sys8080->rgstrs.INTE = 0b1;
+        DEBUG("Set interrupt enable");
     } else {
         // DI
-        sys8080->rgstrs.INTE = 0b1;
+        sys8080->rgstrs.INTE = 0b0;
+        DEBUG("Reset interrupt enable");
     }
     return 4;
 }

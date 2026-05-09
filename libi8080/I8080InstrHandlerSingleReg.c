@@ -13,7 +13,6 @@
 #include "I8080InstrHandlerSingleReg.h"
 #include "I8080System.h"
 #include "I8080Logging.h"
-#include "I8080BasicALOps.h"
 
 I8080CycleCount
 I8080InstrDispatchSingleRegIncDec(
@@ -23,7 +22,7 @@ I8080InstrDispatchSingleRegIncDec(
 {
     uint8_t             prev = 0, byte = 0;
     uint8_t             src = I8080InstrExtShift(instr, 3, 5);
-    I8080ALU_t          alu = I8080ALUCreate(0, 0, false, false, true);
+    uint8_t             OP, OP_lo;
     I8080CycleCount     cycles;
     
     if ( I8080InstrExt(instr, 0, 0) == 0 ) {
@@ -36,20 +35,20 @@ I8080InstrDispatchSingleRegIncDec(
             case kI8080InstrRegisterH:
             case kI8080InstrRegisterL:
             case kI8080InstrRegisterA: {
-                alu.OP1 = sys8080->rgstrs.R[I8080RgstrIdx(src)];
-                I8080ALU1Inc(&alu);
-                DEBUG("Increment register %s = 0x%02hhX", I8080InstrRegisterNames[src], alu.RES);
-                sys8080->rgstrs.R[I8080RgstrIdx(src)] = alu.RES;
+                OP = sys8080->rgstrs.R[I8080RgstrIdx(src)], OP_lo = OP & 0xF;
+                OP++, OP_lo++;
+                DEBUG("Increment register %s = 0x%02hhX", I8080InstrRegisterNames[src], OP);
+                sys8080->rgstrs.R[I8080RgstrIdx(src)] = OP & 0xFF;
                 cycles = 5;
                 break;
             }
             case kI8080InstrRegisterMem: {
-                alu.OP1 = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.HL);
-                DEBUG("Byte 0x%02hhX read from HL=$%04hX", alu.OP1, sys8080->rgstrs.HL);
-                I8080ALU1Inc(&alu);
-                DEBUG("Increment byte = 0x%02hhX", I8080InstrRegisterNames[src], alu.RES);
-                I8080MemWrite(sys8080->sysmem, sys8080->rgstrs.HL, byte);
-                DEBUG("Byte 0x%02hhX written to HL=$%04hX", alu.OP1, sys8080->rgstrs.HL);
+                OP = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.HL), OP_lo = OP & 0xF;
+                DEBUG("Byte 0x%02hhX read from HL=$%04hX", OP, sys8080->rgstrs.HL);
+                OP++, OP_lo++;
+                DEBUG("Increment byte = 0x%02hhX", OP);
+                I8080MemWrite(sys8080->sysmem, sys8080->rgstrs.HL, OP);
+                DEBUG("Byte 0x%02hhX written to HL=$%04hX", OP, sys8080->rgstrs.HL);
                 cycles = 10;
                 break;
             }
@@ -64,20 +63,20 @@ I8080InstrDispatchSingleRegIncDec(
             case kI8080InstrRegisterH:
             case kI8080InstrRegisterL:
             case kI8080InstrRegisterA: {
-                alu.OP1 = sys8080->rgstrs.R[I8080RgstrIdx(src)];
-                I8080ALU1Dec(&alu);
-                DEBUG("Decrement register %s = 0x%02hhX", I8080InstrRegisterNames[src], alu.RES);
-                sys8080->rgstrs.R[I8080RgstrIdx(src)] = alu.RES;
+                OP = sys8080->rgstrs.R[I8080RgstrIdx(src)], OP_lo = OP & 0xF;
+                OP--, OP_lo--;
+                DEBUG("Decrement register %s = 0x%02hhX", I8080InstrRegisterNames[src], OP);
+                sys8080->rgstrs.R[I8080RgstrIdx(src)] = OP & 0xFF;
                 cycles = 5;
                 break;
             }
             case kI8080InstrRegisterMem: {
-                alu.OP1 = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.HL);
-                DEBUG("Byte 0x%02hhX read from HL=$%04hX", alu.OP1, sys8080->rgstrs.HL);
-                I8080ALU1Dec(&alu);
-                DEBUG("Decrement byte = 0x%02hhX", I8080InstrRegisterNames[src], alu.RES);
-                I8080MemWrite(sys8080->sysmem, sys8080->rgstrs.HL, byte);
-                DEBUG("Byte 0x%02hhX written to HL=$%04hX", alu.OP1, sys8080->rgstrs.HL);
+                OP = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.HL), OP_lo = OP & 0xF;
+                DEBUG("Byte 0x%02hhX read from HL=$%04hX", OP, sys8080->rgstrs.HL);
+                OP--, OP_lo--;
+                DEBUG("Decrement byte = 0x%02hhX", OP);
+                I8080MemWrite(sys8080->sysmem, sys8080->rgstrs.HL, OP);
+                DEBUG("Byte 0x%02hhX written to HL=$%04hX", OP, sys8080->rgstrs.HL);
                 cycles = 10;
                 break;
             }
@@ -85,10 +84,10 @@ I8080InstrDispatchSingleRegIncDec(
     }
     
     // Set flags:
-    sys8080->rgstrs.Z = (byte == 0);
-    sys8080->rgstrs.S = ((byte & 0b10000000) == 0b10000000);
-    sys8080->rgstrs.AC = ((prev & 0b00001000) && ! (byte & 0b00001000));
-    sys8080->rgstrs.P = I8080InstrBitParity(byte);
+    sys8080->rgstrs.Z = (OP == 0) ? 0b1 : 0b0;
+    sys8080->rgstrs.S = (OP & 0b10000000) ? 0b1 : 0b0;
+    sys8080->rgstrs.AC = (OP_lo & 0b00010000) ? 0b1 : 0b0;
+    sys8080->rgstrs.P = I8080Parity(OP);
     
     return cycles;
 }
@@ -114,36 +113,36 @@ I8080InstrDispatchSingleRegAccum(
     I8080Instr_t        instr
 )
 {
+    uint16_t            A = sys8080->rgstrs.A;
+    
     if ( instr == 0b00101111 ) {
         // CMA
-        sys8080->rgstrs.A ^= 0b11111111;
+        A ^= 0b11111111;
+        DEBUG("1's complement 0x%02hhX = 0x%02hhX", sys8080->rgstrs.A, A); 
     } else {
         // DAA
-        uint8_t     prev, A = sys8080->rgstrs.A;
+        uint8_t        lo = A & 0xF;
         
-        if ( ((A & 0b00001111) > 6) || sys8080->rgstrs.AC ) {
-            prev = A;
-            A += 6;
-            sys8080->rgstrs.AC = ((prev & 0b00001000) && ! (A & 0b00001000));
-        } else {
-            sys8080->rgstrs.AC = 0;
+        // Adjust low digit:
+        if ( (lo > 9) || sys8080->rgstrs.AC ) {
+            lo += 6, A += 6;
+            sys8080->rgstrs.AC = (lo & ~0b1111) ? 0b1 : 0b0;
         }
-        if ( ((A & 0b11110000) > (9 << 4)) || sys8080->rgstrs.CY ) {
-            prev = A;
-            A += (6 << 4);
-            sys8080->rgstrs.CY = ((prev & 0b10000000) && ! (A & 0b10000000));
-        } else {
-            sys8080->rgstrs.CY = 0;
+        // Adjust high digit:
+        if ( ((A & 0xF0) > 0x90) || sys8080->rgstrs.CY ) {
+            A += 0x60;
+            if ( A & ~0xFF ) sys8080->rgstrs.CY = 0b1;
         }
         
-        // Write-back to accumulator:
-        sys8080->rgstrs.A = A;
+        DEBUG("Binary-coded decimal adjustment, 0x%02hhX => 0x%02hhX",
+            sys8080->rgstrs.A , A);
         
         // Set flags:
-        sys8080->rgstrs.Z = (A == 0);
-        sys8080->rgstrs.S = ((A & 0b10000000) == 0b10000000);
-        sys8080->rgstrs.P = I8080InstrBitParity(A);
+        sys8080->rgstrs.Z = (A == 0) ? 0b1 : 0b0;
+        sys8080->rgstrs.S = (A & 0b10000000) ? 0b1 : 0b0;
+        sys8080->rgstrs.P = I8080Parity(A & 0xFF);
     }
+    sys8080->rgstrs.A = A & 0xFF;
     return 4;
 }
 

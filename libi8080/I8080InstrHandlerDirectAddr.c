@@ -12,6 +12,7 @@
  
 #include "I8080InstrHandlerDirectAddr.h"
 #include "I8080System.h"
+#include "I8080Logging.h"
 
 I8080CycleCount
 I8080InstrDispatchDirectAddr(
@@ -24,15 +25,18 @@ I8080InstrDispatchDirectAddr(
     I8080CycleCount             cycles;
     
     addr = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.PC++) | (I8080MemRead(sys8080->sysmem, sys8080->rgstrs.PC++) << 8);
+    DEBUG("Read address operand $%04hX from $%04hX", addr, sys8080->rgstrs.PC - 2);
     
     switch ( op ) {
         case kI8080InstrDirectAddrOpSTA: {
             I8080MemWrite(sys8080->sysmem, addr, sys8080->rgstrs.A);
+            DEBUG("Stored A=0x%02hhX to $%04hX", sys8080->rgstrs.A, addr);
             cycles = 13;
             break;
         }
         case kI8080InstrDirectAddrOpLDA: {
             sys8080->rgstrs.A = I8080MemRead(sys8080->sysmem, addr);
+            DEBUG("Loaded A=0x%02hhX from $%04hX", sys8080->rgstrs.A, addr);
             cycles = 13;
             break;
         }
@@ -40,12 +44,14 @@ I8080InstrDispatchDirectAddr(
         case kI8080InstrDirectAddrOpSHLD: {
             I8080MemWrite(sys8080->sysmem, addr++, sys8080->rgstrs.L);
             I8080MemWrite(sys8080->sysmem, addr, sys8080->rgstrs.H);
+            DEBUG("Stored HL=0x%04hX to $%04hX", sys8080->rgstrs.HL, addr);
             cycles = 16;
             break;
         }
         case kI8080InstrDirectAddrOpLHLD: {
             sys8080->rgstrs.L = I8080MemRead(sys8080->sysmem, addr++);
             sys8080->rgstrs.H = I8080MemRead(sys8080->sysmem, addr);
+            DEBUG("Loaded HL=0x%04hX from $%04hX", sys8080->rgstrs.HL, addr);
             cycles = 16;
             break;
         }

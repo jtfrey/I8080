@@ -156,7 +156,7 @@ I8080InstrDispatchDataMovementMVI(
             cycles = 10;
             break;
         default:
-            sys8080->rgstrs.R[r] = byte;
+            sys8080->rgstrs.R[I8080RgstrIdx(r)] = byte;
             DEBUG("Moved byte 0x%02hhX to register %s", byte, I8080InstrRegisterNames[r]);
             break;
     }

@@ -40,4 +40,25 @@
 #   define LOGGING_FUNC __func__
 #endif
 
+
+
+#cmakedefine HAS_BUILTIN_PARITY
+#ifdef HAS_BUILTIN_PARITY
+#   define I8080Parity(X) __builtin_parity(X)
+#else
+
+static inline
+int
+I8080Parity(
+    int     X
+)
+{
+    int     n_bits = 0;
+    while (X) X &= (X - 1), n_bits++;
+    return (n_bits & 0b1);
+}
+
+#endif
+
+
 #endif /* __I8080CONFIG_H__ */

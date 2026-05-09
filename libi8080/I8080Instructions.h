@@ -72,37 +72,6 @@ typedef uint8_t I8080Instr_t;
             (((I) >> (BS)) & I8080InstrMask(0, ((BE) - (BS))))
 
 /**
- * Count the number of one bits
- * Determines how many bits are set in \p I.
- * @param I         a byte
- * @return          the number of set bits
- */
-static inline
-int
-I8080InstrBitCount(
-    I8080Instr_t    I
-)
-{
-    int             count = 0;
-    I8080Instr_t    mask = 0b10000000;
-    
-    while ( mask ) {
-        if ( I & mask ) count++;
-        mask >>= 1;
-    }
-    return count;
-}
-
-/**
- * Determine bit parity of a byte
- * If the byte has an even number of one bits, the parity is even and
- * a 0b1 results; an odd number of one bits is odd parity, a 0b0 result.
- * @param I         a byte
- * @return          1 if even parity, 0 if odd
- */
-#define I8080InstrBitParity(I)      ((I8080InstrBitCount(I) & 0b1) ^ 0b1)
-
-/**
  * Instruction dispatch function pointer
  * Type of a function that handles an I8080 instruction.  The dependency on
  * the system's register set and memory is met by passing both to the

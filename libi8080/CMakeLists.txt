@@ -6,6 +6,20 @@ option(I8080_STRIP_DEBUGGING "Enable this option to eliminate DEBUG statements e
 
 option(I8080_LOGGING_USE_PRETTY_FUNCTION "Use the __PRETTY_FUNCTION__ macro if on, __func__ otherwise" ON)
 
+
+include(CheckCSourceCompiles)
+
+# Check for __builtin_parity
+check_c_source_compiles("
+int main() {
+    unsigned int i = 42;
+    return __builtin_parity(i);
+}
+" HAS_BUILTIN_PARITY)
+if(HAS_BUILTIN_PARITY)
+    message(STATUS "Found __builtin_parity")
+endif()
+
 #
 # Generate our common header file and have all targets in this
 # directory use the binary directory on the search path:

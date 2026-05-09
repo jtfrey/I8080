@@ -11,7 +11,6 @@
  */
  
 #include "I8080InstrHandlerAccum.h"
-#include "I8080BasicALOps.h"
 #include "I8080System.h"
 #include "I8080Logging.h"
 
@@ -23,8 +22,21 @@ I8080InstrDispatchAccum(
 {
     I8080InstrRegister_t    r = I8080InstrExt(instr, 0, 2);
     I8080InstrALUOp_t       op = I8080InstrExtShift(instr, 3, 5);
-    I8080ALU_t              alu = I8080ALUCreate(sys8080->rgstrs.A, 0, sys8080->rgstrs.CY, false, true);
     I8080CycleCount         cycles = 4;
+    uint16_t                A = sys8080->rgstrs.A, OP2,
+                            A_lo = A & 0xF, OP2_lo;
+    bool                    set_A = true;
+#ifndef I8080_STRIP_DEBUGGING
+    char                    opstr;
+    const char              *debug_fmt = "Accumulator 0x%1$02hhX %2$c 0x%3$02hhX = 0x%4$02hhX (%5$X%6$X%7$X%8$X%9$X%10$X)\n";
+    const char              *cy_debug_fmt = "Accumulator 0x%1$02hhX %2$c 0x%3$02hhX + %11$X= 0x%4$02hhX (%5$X%6$X%7$X%8$X%9$X%10$X)\n";
+    int                     CY = sys8080->rgstrs.CY;
+#   define SET_OPSTR(C)     opstr = C;
+#   define SET_DEBUG_FMT(S) debug_fmt = S;
+#else
+#   define SET_OPSTR(C)
+#   define SET_DEBUG_FMT(S)
+#endif
     
     switch ( r ) {
         case kI8080InstrRegisterB:
@@ -34,13 +46,13 @@ I8080InstrDispatchAccum(
         case kI8080InstrRegisterH:
         case kI8080InstrRegisterL:
         case kI8080InstrRegisterA: {
-            alu.OP2 = sys8080->rgstrs.R[I8080RgstrIdx(r)];
-            DEBUG("Fetched operand 0x%02hhX from register %s", alu.OP2, I8080InstrRegisterNames[r]);
+            OP2 = sys8080->rgstrs.R[I8080RgstrIdx(r)];
+            DEBUG("Fetched operand 0x%02hhX from register %s", OP2, I8080InstrRegisterNames[r]);
             break;
         }
         case kI8080InstrRegisterMem: {
-            alu.OP2 = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.HL);
-            DEBUG("Fetched operand 0x%02hhX from $%04hX", alu.OP2, sys8080->rgstrs.HL);
+            OP2 = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.HL);
+            DEBUG("Fetched operand 0x%02hhX from $%04hX", OP2, sys8080->rgstrs.HL);
             cycles = 7;
             break;
         }
@@ -48,52 +60,87 @@ I8080InstrDispatchAccum(
     
     switch ( op ) {
         case kI8080InstrALUOpAddC:
-            alu.WC = 0b1;
+            OP2_lo = OP2 & 0xF;
+            A += OP2 + sys8080->rgstrs.CY;
+            A_lo += OP2_lo + sys8080->rgstrs.CY;
+            SET_OPSTR('+');
+            SET_DEBUG_FMT(cy_debug_fmt);
+            break;
         case kI8080InstrALUOpAdd:
-            I8080ALU2Add(&alu);
-            DEBUG("Accumulator 0x%02hhX + 0x%02hhX = 0x%02hhX", alu.OP1, alu.OP2, alu.RES);
-            sys8080->rgstrs.A = alu.RES;
+            OP2_lo = OP2 & 0xF;
+            A += OP2;
+            A_lo += OP2_lo;
+            SET_OPSTR('+');
             break;
         
-        case kI8080InstrALUOpSubC:
-            alu.WC = 0b1;
-        case kI8080InstrALUOpSub:
-            I8080ALU2Sub(&alu);
-            DEBUG("Accumulator 0x%02hhX - 0x%02hhX = 0x%02hhX", alu.OP1, alu.OP2, alu.RES);
-            sys8080->rgstrs.A = alu.RES;
+        case kI8080InstrALUOpSubC: {
+#ifndef I8080_STRIP_DEBUGGING
+            uint16_t OP2_copy = OP2;
+#endif
+            OP2 = ~(OP2 + sys8080->rgstrs.CY) + 1;
+            OP2_lo = OP2 & 0xF;
+            A += OP2;
+            A_lo += OP2_lo;
+#ifndef I8080_STRIP_DEBUGGING
+            OP2 = OP2_copy;
+#endif
+            SET_OPSTR('-');
+            SET_DEBUG_FMT(cy_debug_fmt);
             break;
+        }
+        case kI8080InstrALUOpCmp:
+            set_A = false;
+        case kI8080InstrALUOpSub: {
+#ifndef I8080_STRIP_DEBUGGING
+            uint16_t OP2_copy = OP2;
+#endif
+            OP2 = ~OP2 + 1;
+            OP2_lo = OP2 & 0xF;
+            A += OP2;
+            A_lo += OP2_lo;
+#ifndef I8080_STRIP_DEBUGGING
+            OP2 = OP2_copy;
+#endif
+            SET_OPSTR('-');
+            break;
+        }
             
         case kI8080InstrALUOpAnd:
-            I8080ALU2And(&alu);
-            DEBUG("Accumulator 0x%02hhX & 0x%02hhX = 0x%02hhX", alu.OP1, alu.OP2, alu.RES);
-            sys8080->rgstrs.A = alu.RES;
+            A &= OP2;
+#ifdef I8080_AND_CLEARS_AC
+            A_lo = 0;
+#else
+            // OR of bit 3 shifts to position 4 to detect AC
+            A_lo = (A | OP2) << 1;
+#endif
+            SET_OPSTR('&');
             break;
             
         case kI8080InstrALUOpXor:
-            I8080ALU2Xor(&alu);
-            DEBUG("Accumulator 0x%02hhX | 0x%02hhX = 0x%02hhX", alu.OP1, alu.OP2, alu.RES);
-            sys8080->rgstrs.A = alu.RES;
+            A ^= OP2;
+            A_lo = 0;
+            SET_OPSTR('^');
             break;
             
         case kI8080InstrALUOpOr:
-            I8080ALU2Or(&alu);
-            DEBUG("Accumulator 0x%02hhX ^ 0x%02hhX = 0x%02hhX", alu.OP1, alu.OP2, alu.RES);
-            sys8080->rgstrs.A = alu.RES;
-            break;
-            
-        case kI8080InstrALUOpCmp:
-            I8080ALU2Sub(&alu);
-            DEBUG("Accumulator (0x%02hhX == 0x%02hhX) = CY=%X, P=%X, AC=%X, Z=%X, S=%X",
-                alu.OP1, -alu.OP2, alu.CY, alu.P, alu.AC, alu.Z, alu.S);
+            A |= OP2;
+            A_lo = 0;
+            SET_OPSTR('|');
             break;
     }
-    sys8080->rgstrs.Z = alu.Z;
-    sys8080->rgstrs.S = alu.S;
-    sys8080->rgstrs.AC = alu.AC;
-    sys8080->rgstrs.P = alu.P;
-    sys8080->rgstrs.CY = alu.CY;
+    sys8080->rgstrs.Z = (A == 0) ? 0b1 : 0b0;
+    sys8080->rgstrs.S = (A & 0b10000000) ? 0b1 : 0b0;
+    sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
+    sys8080->rgstrs.P = I8080Parity(A & 0xFF);
+    sys8080->rgstrs.CY = (A & 0b100000000) ? 0b1 : 0b0;
+    DEBUG(debug_fmt,
+            sys8080->rgstrs.A, opstr, OP2, A, sys8080->rgstrs.Z, sys8080->rgstrs.S,
+            sys8080->rgstrs.AC, sys8080->rgstrs.P, sys8080->rgstrs.CY, CY);
+    if ( set_A ) sys8080->rgstrs.A = A & 0xFF;
     
     return cycles;
+#undef SET_OPSTR
+#undef SET_DEBUG_FMT
 }
 
 //
@@ -118,28 +165,42 @@ I8080InstrDispatchAccumRotate(
 )
 {
     I8080InstrRotateOp_t    op = I8080InstrExtShift(instr, 3, 4);
-    I8080ALU_t              alu = I8080ALUCreate(sys8080->rgstrs.A, 0, sys8080->rgstrs.CY, false, true);
+    uint16_t                A = sys8080->rgstrs.A, CY = sys8080->rgstrs.CY;
+#ifndef I8080_STRIP_DEBUGGING
+    const char*             opstr;
+#   define SET_OPSTR(S)     opstr = S;
+#else
+#   define SET_OPSTR(S)
+#endif
     
     switch ( op ) {
         case kI8080InstrRotateOpLeft:
-            I8080ALU1RotL(&alu);
-            DEBUG("Accumulator 0x%02hhX RLC = 0x%02hhX, CY=%X", alu.OP1, alu.RES, alu.CY);
+            CY = (A & 0b10000000) ? 0b1 : 0b0;
+            A = (A << 1) | CY;
+            SET_OPSTR("RLC");
             break;
         case kI8080InstrRotateOpRight:
-            I8080ALU1RotR(&alu);
-            DEBUG("Accumulator 0x%02hhX RRC = 0x%02hhX, CY=%X", alu.OP1, alu.RES, alu.CY);
+            CY = (A & 0b1);
+            A = (A >> 1) | (CY << 7);
+            SET_OPSTR("RRC");
             break;
         case kI8080InstrRotateOpLeftThruCarry:
-            I8080ALU1RotCYL(&alu);
-            DEBUG("Accumulator 0x%02hhX RAL = 0x%02hhX, CY=%X", alu.OP1, alu.RES, alu.CY);
+            A = (A << 1) | sys8080->rgstrs.CY;
+            CY = (A & 0b100000000);
+            SET_OPSTR("RAL");
             break;
         case kI8080InstrRotateOpRightThruCarry:
-            I8080ALU1RotCYR(&alu);
-            DEBUG("Accumulator 0x%02hhX RAR = 0x%02hhX, CY=%X", alu.OP1, alu.RES, alu.CY);
+            CY = (A & 0b1);
+            A = (A >> 1) | (sys8080->rgstrs.CY << 7);
+            SET_OPSTR("RAR");
             break;
     }
-    sys8080->rgstrs.A = alu.RES, sys8080->rgstrs.CY = alu.CY;
+    A &= 0xFF;
+    DEBUG("Accumulator 0x%1$02hhX %2$s = 0x%3$02hhX (CY=%4$X)\n",
+            sys8080->rgstrs.A, opstr, A, CY);
+    sys8080->rgstrs.A = A, sys8080->rgstrs.CY = CY ? 0b1 : 0b0;
     return 4;
+#undef SET_OPSTR
 }
 
 //
@@ -164,60 +225,102 @@ I8080InstrDispatchAccumImmed(
 )
 {
     I8080InstrALUOp_t       op = I8080InstrExtShift(instr, 3, 5);
-    I8080ALU_t              alu = I8080ALUCreate(sys8080->rgstrs.A,
-                                        I8080MemRead(sys8080->sysmem, sys8080->rgstrs.PC++),
-                                        sys8080->rgstrs.CY, false, true);
+    uint16_t                A = sys8080->rgstrs.A, OP2 = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.PC++),
+                            A_lo = A & 0xF, OP2_lo = OP2 & 0xF;
+    bool                    set_A = true;
+#ifndef I8080_STRIP_DEBUGGING
+    char                    opstr;
+    const char              *debug_fmt = "Accumulator 0x%1$02hhX %2$c 0x%3$02hhX = 0x%4$02hhX (%5$X%6$X%7$X%8$X%9$X%10$X)\n";
+    const char              *cy_debug_fmt = "Accumulator 0x%1$02hhX %2$c 0x%3$02hhX + %11$X= 0x%4$02hhX (%5$X%6$X%7$X%8$X%9$X%10$X)\n";
+    int                     CY = sys8080->rgstrs.CY;
+#   define SET_OPSTR(C)     opstr = C;
+#   define SET_DEBUG_FMT(S) debug_fmt = S;
+#else
+#   define SET_OPSTR(C)
+#   define SET_DEBUG_FMT(S)
+#endif
                                         
-    DEBUG("Fetched immediate operand 0x%02hhX from $%04hX", alu.OP2, sys8080->rgstrs.PC - 1);
+    DEBUG("Fetched immediate operand 0x%02hhX from $%04hX", OP2, sys8080->rgstrs.PC - 1);
     
     switch ( op ) {
         case kI8080InstrALUOpAddC:
-            alu.WC = 0b1;
+            A += OP2 + sys8080->rgstrs.CY;
+            A_lo += OP2_lo + sys8080->rgstrs.CY;
+            SET_OPSTR('+');
+            SET_DEBUG_FMT(cy_debug_fmt);
+            break;
         case kI8080InstrALUOpAdd:
-            I8080ALU2Add(&alu);
-            DEBUG("Accumulator 0x%02hhX + 0x%02hhX = 0x%02hhX", alu.OP1, alu.OP2, alu.RES);
-            sys8080->rgstrs.A = alu.RES;
+            A += OP2;
+            A_lo += OP2_lo;
+            SET_OPSTR('+');
             break;
         
-        case kI8080InstrALUOpSubC:
-            alu.WC = 0b1;
-        case kI8080InstrALUOpSub:
-            I8080ALU2Sub(&alu);
-            DEBUG("Accumulator 0x%02hhX - 0x%02hhX = 0x%02hhX", alu.OP1, -alu.OP2, alu.RES);
-            sys8080->rgstrs.A = alu.RES;
+        case kI8080InstrALUOpSubC: {
+#ifndef I8080_STRIP_DEBUGGING
+            uint16_t OP2_copy = OP2;
+#endif
+            OP2 = ~(OP2 + sys8080->rgstrs.CY) + 1;
+            A += OP2;
+            A_lo += OP2_lo;
+#ifndef I8080_STRIP_DEBUGGING
+            OP2 = OP2_copy;
+#endif
+            SET_OPSTR('-');
+            SET_DEBUG_FMT(cy_debug_fmt);
             break;
+        }
+        case kI8080InstrALUOpCmp:
+            set_A = false;
+        case kI8080InstrALUOpSub: {
+#ifndef I8080_STRIP_DEBUGGING
+            uint16_t OP2_copy = OP2;
+#endif
+            OP2 = ~OP2 + 1;
+            A += OP2;
+            A_lo += OP2_lo;
+#ifndef I8080_STRIP_DEBUGGING
+            OP2 = OP2_copy;
+#endif
+            SET_OPSTR('-');
+            break;
+        }
             
         case kI8080InstrALUOpAnd:
-            I8080ALU2And(&alu);
-            DEBUG("Accumulator 0x%02hhX & 0x%02hhX = 0x%02hhX", alu.OP1, alu.OP2, alu.RES);
-            sys8080->rgstrs.A = alu.RES;
+            A &= OP2;
+#ifdef I8080_AND_CLEARS_AC
+            A_lo = 0;
+#else
+            // OR of bit 3 shifts to position 4 to detect AC
+            A_lo = (A | OP2) << 1;
+#endif
+            SET_OPSTR('&');
             break;
             
         case kI8080InstrALUOpXor:
-            I8080ALU2Xor(&alu);
-            DEBUG("Accumulator 0x%02hhX | 0x%02hhX = 0x%02hhX", alu.OP1, alu.OP2, alu.RES);
-            sys8080->rgstrs.A = alu.RES;
+            A ^= OP2;
+            A_lo = 0;
+            SET_OPSTR('^');
             break;
             
         case kI8080InstrALUOpOr:
-            I8080ALU2Or(&alu);
-            DEBUG("Accumulator 0x%02hhX ^ 0x%02hhX = 0x%02hhX", alu.OP1, alu.OP2, alu.RES);
-            sys8080->rgstrs.A = alu.RES;
-            break;
-            
-        case kI8080InstrALUOpCmp:
-            I8080ALU2Sub(&alu);
-            DEBUG("Accumulator (0x%02hhX == 0x%02hhX) = CY=%X, P=%X, AC=%X, Z=%X, S=%X",
-                alu.OP1, -alu.OP2, alu.CY, alu.P, alu.AC, alu.Z, alu.S);
+            A |= OP2;
+            A_lo = 0;
+            SET_OPSTR('|');
             break;
     }
-    sys8080->rgstrs.Z = alu.Z;
-    sys8080->rgstrs.S = alu.S;
-    sys8080->rgstrs.AC = alu.AC;
-    sys8080->rgstrs.P = alu.P;
-    sys8080->rgstrs.CY = alu.CY;
-    
+    sys8080->rgstrs.Z = (A == 0) ? 0b1 : 0b0;
+    sys8080->rgstrs.S = (A & 0b10000000) ? 0b1 : 0b0;
+    sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
+    sys8080->rgstrs.P = I8080Parity(A & 0xFF);
+    sys8080->rgstrs.CY = (A & 0b100000000) ? 0b1 : 0b0;
+    DEBUG(debug_fmt,
+            sys8080->rgstrs.A, opstr, OP2, A, sys8080->rgstrs.Z, sys8080->rgstrs.S,
+            sys8080->rgstrs.AC, sys8080->rgstrs.P, sys8080->rgstrs.CY, CY);
+    if ( set_A ) sys8080->rgstrs.A = A & 0xFF;
+            
     return 7;
+#undef SET_OPSTR
+#undef SET_DEBUG_FMT
 }
 
 //

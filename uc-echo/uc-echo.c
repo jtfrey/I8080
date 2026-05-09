@@ -28,22 +28,27 @@ DONE:
  */
 
 uint8_t     prgrm[] = {
-                0xAF,               /*   XRA    A    */
-/* LOOP: */     0xCA, 0x01, 0x10,   /*   JZ     LOOP */
+/*1000*/        0x3E, 0x2C,         /*      MVI  #$2A   */
+/*1002*/        0x27,               /*      DAA         */
+/*1003*/        0xCE, 0x78,         /*      ACI  #$18   */
+/*1005*/        0x27,               /*      DAA         */
+/*1006*/        0xFE, 0x10,         /*      CPI  #$10   */
+/*1008*/        0xCA, 0x0C, 0x10,   /*      JZ   +1     */
+/*100B*/        0x76,               /*      HLT         */
 
-                0xDB, 0x00,
-                0xFE, 0xFF,
-                0xCA, 0x1D, 0x10,
-                0xFE, 0x04,
-                0xCA, 0x1D, 0x10,
-                0xFE, 0x61,
-                0xFA, 0x18, 0x10,
-                0xFE, 0x7B,
-                0xF2, 0x18, 0x10,
-                0xE6, 0xDF,
-                0xD3, 0x01,
-                0xC3, 0x00, 0x10,
-                0x76 };
+/*100C*/        0xDB, 0x00,   
+/*100E*/        0xFE, 0xFF,
+/*1010*/        0xCA, 0x29, 0x10,
+/*1013*/        0xFE, 0x04,
+/*1015*/        0xCA, 0x29, 0x10,
+/*1018*/        0xFE, 0x61,
+/*101A*/        0xFA, 0x24, 0x10,
+/*101D*/        0xFE, 0x7B,
+/*101F*/        0xF2, 0x24, 0x10,
+/*1022*/        0xE6, 0xDF,
+/*1024*/        0xD3, 0x01,
+/*1026*/        0xC3, 0x0C, 0x10,
+/*1029*/        0x76 };
 
 volatile sig_atomic_t keepRunning = 1;
 
@@ -64,7 +69,7 @@ main()
     signal(SIGINT, handle_sigint);
     I8080LoggingSetMaxLevel(kI8080LoggingLevelDebug);
     //I8080LoggingSetFormat(kI8080LoggingFormatDetailed);
-    I8080LoggingSetFile("test.log", true);
+    I8080LoggingSetFile("test.log", false);
     
     sys8080 = I8080SystemCreateWithTTYContext(kI8080SystemOpts2MHzClock, 0, &tty_context);
     

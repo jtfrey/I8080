@@ -11,8 +11,8 @@
  */
  
 #include "I8080InstrHandlerRegPairs.h"
-#include "I8080BasicALOps.h"
 #include "I8080System.h"
+#include "I8080Logging.h"
 
 I8080CycleCount
 I8080InstrDispatchRegPairStack(
@@ -29,18 +29,26 @@ I8080InstrDispatchRegPairStack(
             case kI8080InstrRegisterPairBC:
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.B);
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.C);
+                DEBUG("Pushed BC=0x%04hX to the stack at $%04hX",
+                    sys8080->rgstrs.BC, sys8080->rgstrs.SP + 2);
                 break;
             case kI8080InstrRegisterPairDE:
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.D);
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.E);
+                DEBUG("Pushed DE=0x%04hX to the stack at $%04hX",
+                    sys8080->rgstrs.DE, sys8080->rgstrs.SP + 2);
                 break;
             case kI8080InstrRegisterPairHL:
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.H);
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.L);
+                DEBUG("Pushed HL=0x%04hX to the stack at $%04hX",
+                    sys8080->rgstrs.HL, sys8080->rgstrs.SP + 2);
                 break;
             case kI8080InstrRegisterPairPSW:
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.A);
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.F);
+                DEBUG("Pushed PSW=0x%04hX to the stack at $%04hX",
+                    sys8080->rgstrs.PSW, sys8080->rgstrs.SP + 2);
                 break;
         }
         cycles = 11;
@@ -50,18 +58,26 @@ I8080InstrDispatchRegPairStack(
             case kI8080InstrRegisterPairBC:
                 sys8080->rgstrs.C = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
                 sys8080->rgstrs.C = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
+                DEBUG("Popped BC=0x%04hX for the stack at $%04hX",
+                    sys8080->rgstrs.BC, sys8080->rgstrs.SP - 2);
                 break;
             case kI8080InstrRegisterPairDE:
                 sys8080->rgstrs.E = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
                 sys8080->rgstrs.D = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
+                DEBUG("Popped DE=0x%04hX for the stack at $%04hX",
+                    sys8080->rgstrs.DE, sys8080->rgstrs.SP - 2);
                 break;
             case kI8080InstrRegisterPairHL:
                 sys8080->rgstrs.L = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
                 sys8080->rgstrs.H = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
+                DEBUG("Popped HL=0x%04hX for the stack at $%04hX",
+                    sys8080->rgstrs.HL, sys8080->rgstrs.SP - 2);
                 break;
             case kI8080InstrRegisterPairPSW:
                 sys8080->rgstrs.F = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
                 sys8080->rgstrs.A = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
+                DEBUG("Popped PSW=0x%04hX for the stack at $%04hX",
+                    sys8080->rgstrs.PSW, sys8080->rgstrs.SP - 2);
                 break;
         }
         cycles = 10;
@@ -91,159 +107,77 @@ I8080InstrDispatchRegPairsArith(
 )
 {
     I8080InstrRegisterPair_t    pair = I8080InstrExtShift(instr, 4, 5);
-    I8080ALU_t                  alu;
     I8080CycleCount             cycles;
     
     switch ( instr & 0b00001110 ) {
         case 0b00001000: {
             // DAD
-            alu = I8080ALUCreate(sys8080->rgstrs.L, 0, false, false, true);
+            uint32_t            base = sys8080->rgstrs.HL,
+                                offset;
+                                
             switch ( pair ) {
                 case kI8080InstrRegisterPairBC:
-                    alu.OP2 = sys8080->rgstrs.C;
+                    offset = sys8080->rgstrs.BC;
                     break;
                 case kI8080InstrRegisterPairDE:
-                    alu.OP2 = sys8080->rgstrs.E;
+                    offset = sys8080->rgstrs.DE;
                     break;
                 case kI8080InstrRegisterPairHL:
-                    alu.OP2 = sys8080->rgstrs.L;
+                    offset = sys8080->rgstrs.HL;
                     break;
                 case kI8080InstrRegisterPairSP:
-                    alu.OP2 = sys8080->rgstrs.SP & 0x00FF;
+                    offset = sys8080->rgstrs.SP;
                     break;
             }
-            I8080ALU2Add(&alu);
-            sys8080->rgstrs.L = alu.RES;
-            alu.OP1 = sys8080->rgstrs.H, alu.WC = 0b1;
-            switch ( pair ) {
-                case kI8080InstrRegisterPairBC:
-                    alu.OP2 = sys8080->rgstrs.B;
-                    break;
-                case kI8080InstrRegisterPairDE:
-                    alu.OP2 = sys8080->rgstrs.D;
-                    break;
-                case kI8080InstrRegisterPairHL:
-                    alu.OP2 = sys8080->rgstrs.H;
-                    break;
-                case kI8080InstrRegisterPairSP:
-                    alu.OP2 = sys8080->rgstrs.SP >> 8;
-                    break;
-            }
-            I8080ALU2Add(&alu);
-            sys8080->rgstrs.H = alu.RES;
-            sys8080->rgstrs.CY = alu.CY;
+            base += offset;
+            DEBUG("Double-add HL=0x%04hX + %s=0x%04hX = 0x%04hX",
+                sys8080->rgstrs.HL, I8080InstrRegisterPairNames[pair], offset, base & 0xFFFF);
+            sys8080->rgstrs.HL = base & 0xFFFF;
+            sys8080->rgstrs.CY = (base & ~0xFFFFFFFF) ? 0b1 : 0b0;
             cycles = 10;
             break;
         }
         case 0b00001010: {
             // INX
-            alu = I8080ALUCreate(0, 0, false, false, true);
+            uint16_t        result;
+            
             switch ( pair ) {
                 case kI8080InstrRegisterPairBC:
-                    alu.OP1 = sys8080->rgstrs.C;
+                    result = ++sys8080->rgstrs.BC;
                     break;
                 case kI8080InstrRegisterPairDE:
-                    alu.OP1 = sys8080->rgstrs.E;
+                    result = ++sys8080->rgstrs.DE;
                     break;
                 case kI8080InstrRegisterPairHL:
-                    alu.OP1 = sys8080->rgstrs.L;
+                    result = ++sys8080->rgstrs.HL;
                     break;
                 case kI8080InstrRegisterPairSP:
-                    alu.OP1 = sys8080->rgstrs.SP & 0x00FF;
+                    result = ++sys8080->rgstrs.SP;
                     break;
             }
-            I8080ALU1Inc(&alu);
-            alu.SET = false;
-            switch ( pair ) {
-                case kI8080InstrRegisterPairBC:
-                    sys8080->rgstrs.C = alu.RES;
-                    if ( alu.CY ) {
-                        alu.OP1 = sys8080->rgstrs.B;
-                        I8080ALU1Inc(&alu);
-                        sys8080->rgstrs.B = alu.RES;
-                    }
-                    break;
-                case kI8080InstrRegisterPairDE:
-                    sys8080->rgstrs.E = alu.RES;
-                    if ( alu.CY ) {
-                        alu.OP1 = sys8080->rgstrs.D;
-                        I8080ALU1Inc(&alu);
-                        sys8080->rgstrs.D = alu.RES;
-                    }
-                    break;
-                case kI8080InstrRegisterPairHL:
-                    sys8080->rgstrs.L = alu.RES;
-                    if ( alu.CY ) {
-                        alu.OP1 = sys8080->rgstrs.H;
-                        I8080ALU1Inc(&alu);
-                        sys8080->rgstrs.H = alu.RES;
-                    }
-                    break;
-                case kI8080InstrRegisterPairSP:
-                    sys8080->rgstrs.SP = (sys8080->rgstrs.SP & 0xFF00) | alu.RES;
-                    if ( alu.CY ) {
-                        alu.OP1 = sys8080->rgstrs.SP >> 8;
-                        I8080ALU1Inc(&alu);
-                        sys8080->rgstrs.SP = (alu.RES << 8) | (sys8080->rgstrs.SP & 0x00FF);
-                    }
-                    break;
-            }
+            DEBUG("Increment %s = 0x%04hX",I8080InstrRegisterPairNames[pair], result);
             cycles = 5;
             break;
         }
         case 0b00000010: {
             // DCX
-            alu = I8080ALUCreate(0, 0, false, false, true);
+            uint16_t        result;
+            
             switch ( pair ) {
                 case kI8080InstrRegisterPairBC:
-                    alu.OP1 = sys8080->rgstrs.C;
+                    result = --sys8080->rgstrs.BC;
                     break;
                 case kI8080InstrRegisterPairDE:
-                    alu.OP1 = sys8080->rgstrs.E;
+                    result = --sys8080->rgstrs.DE;
                     break;
                 case kI8080InstrRegisterPairHL:
-                    alu.OP1 = sys8080->rgstrs.L;
+                    result = --sys8080->rgstrs.HL;
                     break;
                 case kI8080InstrRegisterPairSP:
-                    alu.OP1 = sys8080->rgstrs.SP & 0x00FF;
+                    result = --sys8080->rgstrs.SP;
                     break;
             }
-            I8080ALU1Dec(&alu);
-            alu.SET = false;
-            switch ( pair ) {
-                case kI8080InstrRegisterPairBC:
-                    sys8080->rgstrs.C = alu.RES;
-                    if ( alu.CY ) {
-                        alu.OP1 = sys8080->rgstrs.B;
-                        I8080ALU1Dec(&alu);
-                        sys8080->rgstrs.B = alu.RES;
-                    }
-                    break;
-                case kI8080InstrRegisterPairDE:
-                    sys8080->rgstrs.E = alu.RES;
-                    if ( alu.CY ) {
-                        alu.OP1 = sys8080->rgstrs.D;
-                        I8080ALU1Dec(&alu);
-                        sys8080->rgstrs.D = alu.RES;
-                    }
-                    break;
-                case kI8080InstrRegisterPairHL:
-                    sys8080->rgstrs.L = alu.RES;
-                    if ( alu.CY ) {
-                        alu.OP1 = sys8080->rgstrs.H;
-                        I8080ALU1Dec(&alu);
-                        sys8080->rgstrs.H = alu.RES;
-                    }
-                    break;
-                case kI8080InstrRegisterPairSP:
-                    sys8080->rgstrs.SP = (sys8080->rgstrs.SP & 0xFF00) | alu.RES;
-                    if ( alu.CY ) {
-                        alu.OP1 = sys8080->rgstrs.SP >> 8;
-                        I8080ALU1Dec(&alu);
-                        sys8080->rgstrs.SP = (alu.RES << 8) | (sys8080->rgstrs.SP & 0x00FF);
-                    }
-                    break;
-            }
+            DEBUG("Decrement %s = 0x%04hX",I8080InstrRegisterPairNames[pair], result);
             cycles = 5;
             break;
         }
@@ -294,6 +228,7 @@ I8080InstrDispatchRegPairsExchange(
             // XCHG
             I8080RegistersExchangeNamed8b(sys8080->rgstrs, H, D);
             I8080RegistersExchangeNamed8b(sys8080->rgstrs, L, E);
+            DEBUG("Exchanged (H, L) <=> (D, E)");
             cycles = 4;
             break;
         }
@@ -308,14 +243,15 @@ I8080InstrDispatchRegPairsExchange(
             to_H = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP + 1);
             I8080MemWrite(sys8080->sysmem, sys8080->rgstrs.SP + 1, sys8080->rgstrs.H);
             sys8080->rgstrs.H = to_H;
+            DEBUG("Exchanged (H, L) with stack at ($%04hX, $%04hX)",
+                sys8080->rgstrs.SP, sys8080->rgstrs.SP + 1);
             cycles = 18;
             break;
         }
         case 0b11111001: {
             // SPHL
-            sys8080->rgstrs.SP = sys8080->rgstrs.H;
-            sys8080->rgstrs.SP <<= 8;
-            sys8080->rgstrs.SP |= sys8080->rgstrs.L;
+            sys8080->rgstrs.SP = sys8080->rgstrs.HL;
+            DEBUG("Set SP = HL=0x%04hX", sys8080->rgstrs.HL);
             cycles = 5;
             break;
         }
