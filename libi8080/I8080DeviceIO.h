@@ -269,8 +269,12 @@ extern const I8080DevicePtr I8080DeviceStdOutput;
  */
 typedef enum {
     kI8080DeviceStdOutputOptsClearScreenOnReset = 0b1,      /*!< respond to input of one character at a time */
-    
+#ifdef HAS_TERMIOS_OLCUC
+    kI8080DeviceStdOutputOptsForceUppercase     = 0b10,     /*!< force all output to uppercase alphabet */
+    kI8080DeviceStdOutputOptsAll                = 0b11      /*!< convenience value that contains all options set */
+#else
     kI8080DeviceStdOutputOptsAll                = 0b1       /*!< convenience value that contains all options set */
+#endif
 } I8080DeviceStdOutputOpts_t;
 
 /**
@@ -288,6 +292,7 @@ typedef enum {
  */
 typedef struct {
     I8080DeviceStdOutputOpts_t  options;        /*!< options bitvector, see \ref I8080DeviceStdOutputOpts_t */
+    struct termios              saved_state;    /*!< to hold a copy of the original terminal state */
 } I8080DeviceStdOutputContext_t;
 
 /** 

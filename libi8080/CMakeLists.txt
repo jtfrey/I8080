@@ -20,6 +20,17 @@ if(HAS_BUILTIN_PARITY)
     message(STATUS "Found __builtin_parity")
 endif()
 
+# Check for OLCUC output flag in termios
+check_c_source_compiles("
+include <termios.h>
+int main() {
+    return OLCUC;
+}
+" HAS_TERMIOS_OLCUC)
+if(HAS_TERMIOS_OLCUC)
+    message(STATUS "Found termios OLCUC")
+endif()
+
 #
 # Generate our common header file and have all targets in this
 # directory use the binary directory on the search path:
@@ -48,7 +59,6 @@ set(LIBI8080_SOURCES
 set(LIBI8080_HEADERS
     I8080Logging.h
     I8080Registers.h
-    I8080BasicALOps.h
     I8080Memory.h
     I8080DeviceIO.h
     I8080Instructions.h

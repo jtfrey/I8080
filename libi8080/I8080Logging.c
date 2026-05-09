@@ -91,6 +91,7 @@ I8080LoggingSetStream(
     if ( stream != __logstream ) {
         if ( __should_close_logstream ) fclose(__logstream);
         __logstream = stream;
+        setvbuf(__logstream, NULL, _IOLBF, BUFSIZ);
         __should_close_logstream = should_close;
     }
 }

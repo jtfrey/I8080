@@ -31,6 +31,33 @@
 #define I8080_VERSION_MINOR @PROJECT_VERSION_MINOR@
 #define I8080_VERSION_PATCH @PROJECT_VERSION_PATCH@
 
+/*
+ * Does this system's termios include the force-to-uppercase
+ * output flag?
+ */
+#cmakedefine HAS_TERMIOS_OLCUC
+
+/*
+ * Does this compiler provide the __builtin_parity
+ * function?
+ */
+#cmakedefine HAS_BUILTIN_PARITY
+#ifdef HAS_BUILTIN_PARITY
+#   define I8080Parity(X) __builtin_parity(X)
+#else
+    /* Kernighan's bit counter */
+    static inline
+    int
+    I8080Parity(
+        int     X
+    )
+    {
+        int     n_bits = 0;
+        while (X) X &= (X - 1), n_bits++;
+        return (n_bits & 0b1);
+    }
+#endif
+
 #cmakedefine I8080_STRIP_DEBUGGING
 
 #cmakedefine I8080_LOGGING_USE_PRETTY_FUNCTION
@@ -39,26 +66,5 @@
 #else
 #   define LOGGING_FUNC __func__
 #endif
-
-
-
-#cmakedefine HAS_BUILTIN_PARITY
-#ifdef HAS_BUILTIN_PARITY
-#   define I8080Parity(X) __builtin_parity(X)
-#else
-
-static inline
-int
-I8080Parity(
-    int     X
-)
-{
-    int     n_bits = 0;
-    while (X) X &= (X - 1), n_bits++;
-    return (n_bits & 0b1);
-}
-
-#endif
-
 
 #endif /* __I8080CONFIG_H__ */

@@ -3,10 +3,10 @@
 # characters from device 0, converts letters to uppercase,
 # and exits when CTRL-D or EOF is encountered.
 #
-add_executable(uc-echo)
-target_sources(uc-echo
+add_executable(demo)
+target_sources(demo
     PRIVATE
-        uc-echo.c)
-target_link_libraries(uc-echo
+        demo.c)
+target_link_libraries(demo
     PRIVATE
         i8080)

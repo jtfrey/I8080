@@ -156,10 +156,10 @@ I8080InstrDispatchCall(
             break;
     }
     if ( is_satisfied ) {
-        I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.PC, (sys8080->rgstrs.PC >> 8));
-        I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.PC, (sys8080->rgstrs.PC & 0xFF));
+        I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (sys8080->rgstrs.PC >> 8));
+        I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (sys8080->rgstrs.PC & 0xFF));
+        DEBUG("Call%s to $%04hX TAKEN, $%04hX pushed to stack", call_type, addr, sys8080->rgstrs.PC);
         sys8080->rgstrs.PC = addr;
-        DEBUG("Call%s to $%04hX TAKEN", call_type, addr);
         return 17;
     } else {
         DEBUG("Call%s NOT TAKEN", call_type);
@@ -215,20 +215,20 @@ I8080InstrDispatchReturn(
     
     switch ( cond ) {
         case kI8080InstrCondOnNotZero:
-            // Unconditional JMP when the lowest bit is set for this bit
+            is_satisfied = ! sys8080->rgstrs.Z;
+            return_type = " on zero reset";
+            break;
+        case kI8080InstrCondOnZero:
+            // Unconditional RET when the lowest bit is set for this bit
             // pattern; conditionals if not set:
             if ( (instr & 0b1) ) {
                 is_satisfied = true;
                 cycles = 10;
                 return_type = "";
             } else {
-                is_satisfied = ! sys8080->rgstrs.Z;
-                return_type = " on zero reset";
+                is_satisfied = sys8080->rgstrs.Z;
+                return_type = " on zero set";
             }
-            break;
-        case kI8080InstrCondOnZero:
-            is_satisfied = sys8080->rgstrs.Z;
-            return_type = " on zero set";
             break;
         case kI8080InstrCondOnNoCarry:
             is_satisfied = ! sys8080->rgstrs.CY;
@@ -257,8 +257,8 @@ I8080InstrDispatchReturn(
     }
     if ( is_satisfied ) {
         I8080Addr_t     addr;
-        addr = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.PC++);
-        addr = (addr << 8) | I8080MemRead(sys8080->sysmem, sys8080->rgstrs.PC++);
+        addr = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
+        addr |= (I8080Addr_t)I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++) << 8;
         sys8080->rgstrs.PC = addr;
         DEBUG("Return%s to $%04hX TAKEN", return_type, addr);
         return cycles;
@@ -329,8 +329,8 @@ I8080InstrDispatchRestart(
 {
     I8080Instr_t        slot = I8080InstrExtShift(instr, 3, 5);
     
-    I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.PC, (sys8080->rgstrs.PC >> 8));
-    I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.PC, (sys8080->rgstrs.PC & 0xFF));
+    I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (sys8080->rgstrs.PC >> 8));
+    I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (sys8080->rgstrs.PC & 0xFF));
     
     sys8080->rgstrs.PC = slot << 4;
     

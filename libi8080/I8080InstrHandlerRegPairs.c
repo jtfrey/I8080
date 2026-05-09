@@ -30,25 +30,25 @@ I8080InstrDispatchRegPairStack(
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.B);
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.C);
                 DEBUG("Pushed BC=0x%04hX to the stack at $%04hX",
-                    sys8080->rgstrs.BC, sys8080->rgstrs.SP + 2);
+                    sys8080->rgstrs.BC, sys8080->rgstrs.SP);
                 break;
             case kI8080InstrRegisterPairDE:
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.D);
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.E);
                 DEBUG("Pushed DE=0x%04hX to the stack at $%04hX",
-                    sys8080->rgstrs.DE, sys8080->rgstrs.SP + 2);
+                    sys8080->rgstrs.DE, sys8080->rgstrs.SP);
                 break;
             case kI8080InstrRegisterPairHL:
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.H);
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.L);
                 DEBUG("Pushed HL=0x%04hX to the stack at $%04hX",
-                    sys8080->rgstrs.HL, sys8080->rgstrs.SP + 2);
+                    sys8080->rgstrs.HL, sys8080->rgstrs.SP);
                 break;
             case kI8080InstrRegisterPairPSW:
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.A);
                 I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, sys8080->rgstrs.F);
                 DEBUG("Pushed PSW=0x%04hX to the stack at $%04hX",
-                    sys8080->rgstrs.PSW, sys8080->rgstrs.SP + 2);
+                    sys8080->rgstrs.PSW, sys8080->rgstrs.SP);
                 break;
         }
         cycles = 11;
@@ -58,25 +58,25 @@ I8080InstrDispatchRegPairStack(
             case kI8080InstrRegisterPairBC:
                 sys8080->rgstrs.C = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
                 sys8080->rgstrs.C = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
-                DEBUG("Popped BC=0x%04hX for the stack at $%04hX",
+                DEBUG("Popped BC=0x%04hX from the stack at $%04hX",
                     sys8080->rgstrs.BC, sys8080->rgstrs.SP - 2);
                 break;
             case kI8080InstrRegisterPairDE:
                 sys8080->rgstrs.E = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
                 sys8080->rgstrs.D = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
-                DEBUG("Popped DE=0x%04hX for the stack at $%04hX",
+                DEBUG("Popped DE=0x%04hX from the stack at $%04hX",
                     sys8080->rgstrs.DE, sys8080->rgstrs.SP - 2);
                 break;
             case kI8080InstrRegisterPairHL:
                 sys8080->rgstrs.L = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
                 sys8080->rgstrs.H = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
-                DEBUG("Popped HL=0x%04hX for the stack at $%04hX",
+                DEBUG("Popped HL=0x%04hX from the stack at $%04hX",
                     sys8080->rgstrs.HL, sys8080->rgstrs.SP - 2);
                 break;
             case kI8080InstrRegisterPairPSW:
                 sys8080->rgstrs.F = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
                 sys8080->rgstrs.A = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
-                DEBUG("Popped PSW=0x%04hX for the stack at $%04hX",
+                DEBUG("Popped PSW=0x%04hX from the stack at $%04hX",
                     sys8080->rgstrs.PSW, sys8080->rgstrs.SP - 2);
                 break;
         }

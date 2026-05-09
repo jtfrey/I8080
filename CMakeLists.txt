@@ -9,4 +9,4 @@ project(I8080
         C ASM)
 
 add_subdirectory(libi8080)
-add_subdirectory(uc-echo)
+add_subdirectory(demo)

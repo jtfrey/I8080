@@ -421,8 +421,29 @@ I8080DeviceStdOutputReset(
 {
     I8080DeviceStdOutputContext_t   *stdout_context = (I8080DeviceStdOutputContext_t*)context;
     
-    if ( stdout_context && (stdout_context->options & kI8080DeviceStdOutputOptsClearScreenOnReset) ) {
-        printf("\033[H\033[2J");fflush(stdout);
+    if ( stdout_context ) {
+#ifdef HAS_TERMIOS_OLCUC
+        if ( ! (stdout_context->options & kI8080DeviceStdIOOptsHasBeenConfigured) ) {
+            struct termios ttystate;
+            
+            //get the terminal state
+            tcgetattr(STDOUT_FILENO, &ttystate);
+            stdout_context->saved_state = ttystate;
+            
+            if ( stdout_context->options & kI8080DeviceStdOutputOptsForceUppercase ) {
+                //turn on forced uppercase
+                ttystate.c_oflag |= OLCUC;
+            }
+            
+            //set the terminal attributes.
+            tcsetattr(STDOUT_FILENO, TCSANOW, &ttystate);
+            
+            stdout_context->options |= kI8080DeviceStdIOOptsHasBeenConfigured;
+        }
+#endif
+        if ( stdout_context->options & kI8080DeviceStdOutputOptsClearScreenOnReset ) {
+            printf("\033[H\033[2J");fflush(stdout);
+        }
     }
 }
 
@@ -433,6 +454,15 @@ I8080DeviceStdOutputShutdown(
     const void      *context
 )
 {
+#ifdef HAS_TERMIOS_OLCUC
+    I8080DeviceStdOutputContext_t   *stdout_context = (I8080DeviceStdOutputContext_t*)context;
+    
+    if ( stdout_context && (stdout_context->options & kI8080DeviceStdIOOptsHasBeenConfigured) ) {
+        //set the terminal attributes.
+        tcsetattr(STDOUT_FILENO, TCSANOW, &stdout_context->saved_state);
+        stdout_context->options &= ~kI8080DeviceStdIOOptsHasBeenConfigured;
+    }
+#endif
 }
 
 static

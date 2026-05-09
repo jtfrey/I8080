@@ -189,7 +189,7 @@ I8080InstrDispatchDataMovementLXI(
     I8080Instr_t                lo = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.PC++),
                                 hi = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.PC++);
     
-    DEBUG("Loaded two bytes 0x%02hhX, %02hhX from $%04hX", lo, hi, sys8080->rgstrs.PC - 2);
+    DEBUG("Loaded two bytes 0x%02hhX, 0x%02hhX from $%04hX", lo, hi, sys8080->rgstrs.PC - 2);
     switch ( rp ) {
         case kI8080InstrRegisterPairSP:
             sys8080->rgstrs.SP = hi;
@@ -199,7 +199,7 @@ I8080InstrDispatchDataMovementLXI(
         default:
             sys8080->rgstrs.RP[rp] = hi;
             sys8080->rgstrs.RP[rp] = (sys8080->rgstrs.RP[rp] << 8) | lo;
-            DEBUG("Loaded address $%04hX into %s", sys8080->rgstrs.SP);
+            DEBUG("Loaded address $%04hX into %s", sys8080->rgstrs.SP, I8080InstrRegisterPairNames[rp]);
             break;
     }
 
