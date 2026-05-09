@@ -87,7 +87,7 @@ I8080DevBusReset(
 {
     int             i = 0;
     
-    while ( (i < devbus->n_input) && (i < devbus->n_output) ) {
+    while ( i < 256 ) {
         bool        same_device = devbus->input_devs[i].device_ptr == devbus->output_devs[i].device_ptr;
         
         if ( devbus->input_devs[i].device_ptr ) {
@@ -100,24 +100,8 @@ I8080DevBusReset(
             if ( ! same_device && devbus->output_devs[i].device_ptr->reset)
                 devbus->output_devs[i].device_ptr->reset(devbus->output_devs[i].device_ptr, devbus->output_devs[i].context);
         }
-        if ( same_device && devbus->input_devs[i].device_ptr->reset )
+        if ( same_device && devbus->input_devs[i].device_ptr && devbus->input_devs[i].device_ptr->reset )
             devbus->input_devs[i].device_ptr->reset(devbus->input_devs[i].device_ptr, devbus->input_devs[i].context);
-        i++;
-    }
-    while ( i < devbus->n_input ) {
-        if ( devbus->input_devs[i].device_ptr ) {
-            devbus->input_devs[i].device_ptr->input.bytes_in = 0;
-            if ( devbus->input_devs[i].device_ptr->reset )
-                devbus->input_devs[i].device_ptr->reset(devbus->input_devs[i].device_ptr, devbus->input_devs[i].context);
-        }
-        i++;
-    }
-    while ( i < devbus->n_output ) {
-        if ( devbus->output_devs[i].device_ptr ) {
-            devbus->output_devs[i].device_ptr->output.bytes_out = 0;
-            if ( devbus->output_devs[i].device_ptr->reset )
-                devbus->output_devs[i].device_ptr->reset(devbus->output_devs[i].device_ptr, devbus->output_devs[i].context);
-        }
         i++;
     }
 }
@@ -131,7 +115,7 @@ I8080DevBusShutdown(
 {
     int             i = 0;
     
-    while ( (i < devbus->n_input) && (i < devbus->n_output) ) {
+    while ( i < 256 ) {
         bool        same_device = devbus->input_devs[i].device_ptr == devbus->output_devs[i].device_ptr;
         
         if ( devbus->input_devs[i].device_ptr ) {
@@ -144,24 +128,8 @@ I8080DevBusShutdown(
             if ( ! same_device && devbus->output_devs[i].device_ptr->shutdown)
                 devbus->output_devs[i].device_ptr->shutdown(devbus->output_devs[i].device_ptr, devbus->output_devs[i].context);
         }
-        if ( same_device && devbus->input_devs[i].device_ptr->shutdown )
+        if ( same_device && devbus->input_devs[i].device_ptr && devbus->input_devs[i].device_ptr->shutdown )
             devbus->input_devs[i].device_ptr->shutdown(devbus->input_devs[i].device_ptr, devbus->input_devs[i].context);
-        i++;
-    }
-    while ( i < devbus->n_input ) {
-        if ( devbus->input_devs[i].device_ptr ) {
-            devbus->input_devs[i].device_ptr->input.bytes_in = 0;
-            if ( devbus->input_devs[i].device_ptr->shutdown )
-                devbus->input_devs[i].device_ptr->shutdown(devbus->input_devs[i].device_ptr, devbus->input_devs[i].context);
-        }
-        i++;
-    }
-    while ( i < devbus->n_output ) {
-        if ( devbus->output_devs[i].device_ptr ) {
-            devbus->output_devs[i].device_ptr->output.bytes_out = 0;
-            if ( devbus->output_devs[i].device_ptr->shutdown )
-                devbus->output_devs[i].device_ptr->shutdown(devbus->output_devs[i].device_ptr, devbus->output_devs[i].context);
-        }
         i++;
     }
 }
@@ -170,43 +138,68 @@ I8080DevBusShutdown(
 
 bool
 I8080DevBusRegisterDevice(
-    I8080DevBusRef  devbus,
-    I8080Device_t   *dev,
-    const void      *context
+    I8080DevBusRef          devbus,
+    I8080DevBusRegisterId   req_id, 
+    I8080Device_t           *dev,
+    const void              *context
 )
 {
     bool            ok = true, did_add_input_dev = false;
     
     if ( dev->device_mode & kI8080DeviceModeInput ) {
         if ( devbus->n_input < 0xFF ) {
-            dev->input.device_id = devbus->n_input++;
-            dev->input.bytes_in = 0LL;
-            devbus->input_devs[dev->input.device_id].device_ptr = dev;
-            devbus->input_devs[dev->input.device_id].context = context;
-            did_add_input_dev = true;
-            INFO("Input device \"%s\" registered as 0x%02hhX with device bus %p",
-                dev->device_name ? dev->device_name : "<UNKNOWN>",
-                dev->input.device_id,
-                devbus);
+            I8080DevId  input_id = req_id & 0xFF;
+            
+            if ( req_id == kI8080DevBusRegisterIdNextAvail ) {
+                input_id = 0;
+                while  ( devbus->input_devs[input_id].device_ptr ) input_id++;
+            } else if ( devbus->input_devs[input_id].device_ptr ) {
+                ERROR("A device is already registered with input id 0x%02hhX", input_id);
+                ok = false;
+            }
+            if ( ok ) {
+                devbus->n_input++;
+                dev->input.device_id = input_id;
+                dev->input.bytes_in = 0LL;
+                devbus->input_devs[input_id].device_ptr = dev;
+                devbus->input_devs[input_id].context = context;
+                did_add_input_dev = true;
+                INFO("Input device \"%s\" registered as 0x%02hhX with device bus %p",
+                    dev->device_name ? dev->device_name : "<UNKNOWN>",
+                    input_id,
+                    devbus);
+            }
         } else {
             ERROR("Attempted to register more than 256 input devices");
             ok = false;
         }
     }
-    if ( ok && (dev->device_mode & kI8080DeviceModeOutput) ) {
+    if ( ok && (dev->device_mode & kI8080DeviceModeOutput) ) { 
         if ( devbus->n_output < 0xFF ) {
-            dev->output.device_id = devbus->n_output++;
-            dev->output.bytes_out = 0LL;
-            devbus->output_devs[dev->output.device_id].device_ptr = dev;
-            devbus->output_devs[dev->output.device_id].context = context;
-            INFO("Output device \"%s\" registered as 0x%02hhX with device bus %p",
-                dev->device_name ? dev->device_name : "<UNKNOWN>",
-                dev->output.device_id,
-                devbus);
+            I8080DevId  output_id = req_id & 0xFF;
+            
+            if ( req_id == kI8080DevBusRegisterIdNextAvail ) {
+                output_id = 0;
+                while  ( devbus->output_devs[output_id].device_ptr ) output_id++;
+            } else if ( devbus->output_devs[output_id].device_ptr ) {
+                ERROR("A device is already registered with output id 0x%02hhX", output_id);
+                ok = false;
+            }
+            if ( ok ) {
+                devbus->n_output++;
+                dev->output.device_id = output_id;
+                dev->output.bytes_out = 0LL;
+                devbus->output_devs[output_id].device_ptr = dev;
+                devbus->output_devs[output_id].context = context;
+                INFO("Output device \"%s\" registered as 0x%02hhX with device bus %p",
+                    dev->device_name ? dev->device_name : "<UNKNOWN>",
+                    output_id,
+                    devbus);
+            }
         } else {
-            ERROR("Attempted to register more than 256 output devices\n");
+            ERROR("Attempted to register more than 256 output devices");
             ok = false;
-            // Drop the input registration is it was made:
+            // Drop the input registration if it was made:
             if ( did_add_input_dev ) {
                 devbus->input_devs[--devbus->n_input].device_ptr = NULL;
                 devbus->input_devs[--devbus->n_input].context = NULL;
@@ -268,7 +261,7 @@ I8080DevBusReadDevice(
 {
     uint8_t         byte = 0b00000000;
     
-    if ( (dev_id < devbus->n_input) && (devbus->input_devs[dev_id].device_ptr) ) {
+    if ( devbus->input_devs[dev_id].device_ptr ) {
         I8080DevNode_t  *dev = &devbus->input_devs[dev_id];
         
         dev->device_ptr->input.bytes_in++;
@@ -288,7 +281,7 @@ I8080DevBusWriteDevice(
     uint8_t         byte
 )
 {
-   if ( (dev_id < devbus->n_output) && (devbus->output_devs[dev_id].device_ptr) ) {
+   if ( devbus->output_devs[dev_id].device_ptr ) {
         I8080DevNode_t  *dev = &devbus->output_devs[dev_id];
         
         dev->device_ptr->output.bytes_out++;
@@ -308,7 +301,7 @@ I8080DevBusPrint(
 {
     int             i = 0;
     
-    while ( (i < devbus->n_input) && (i < devbus->n_output) ) {
+    while ( i < 256 ) {
         if ( devbus->input_devs[i].device_ptr && devbus->output_devs[i].device_ptr && 
              (devbus->input_devs[i].device_ptr == devbus->output_devs[i].device_ptr) )
         {
@@ -326,22 +319,6 @@ I8080DevBusPrint(
                         i, devbus->output_devs[i].device_ptr->output.bytes_out,
                         devbus->output_devs[i].device_ptr->device_name);
             }
-        }
-        i++;
-    }
-    while ( i < devbus->n_input ) {
-        if ( devbus->input_devs[i].device_ptr ) {
-            fprintf(stream, "I8080Device[%02X] [←%08lX|         ] BYTES  \"%s\"\n",
-                    i, devbus->input_devs[i].device_ptr->input.bytes_in,
-                    devbus->input_devs[i].device_ptr->device_name);
-        }
-        i++;
-    }
-    while ( i < devbus->n_output ) {
-        if ( devbus->output_devs[i].device_ptr ) {
-            fprintf(stream, "I8080Device[%02X] [         |→%08lX] BYTES  \"%s\"\n",
-                    i, devbus->output_devs[i].device_ptr->output.bytes_out,
-                    devbus->output_devs[i].device_ptr->device_name);
         }
         i++;
     }

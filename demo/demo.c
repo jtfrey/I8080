@@ -38,7 +38,7 @@ uint8_t     prgrm[] = {
 /* 102B       */0xCD, 0x38, 0x10,   /* CALL    UC          ; Call uppercase subroutine      */
 
 /* OUTPUT:    */
-/* 102E       */0xD3, 0x01,         /* OUT     #1          ; Write the char to stderr       */
+/* 102E       */0xD3, 0x0A,         /* OUT     #10         ; Write the char to stderr       */
 /* 1030       */0xC3, 0x0C, 0x10,   /* JMP     LOOP        ; Go back for another            */
 /* DONE:      */
 /* 1033:      */0xF1,               /* POP      PSW                                         */
@@ -78,7 +78,7 @@ main()
     
     // Register stderr as output device #1:
     devStderr = *I8080DeviceStdError;
-    I8080DevBusRegisterDevice(sys8080->devbus, &devStderr, NULL);
+    I8080DevBusRegisterDevice(sys8080->devbus, 10, &devStderr, NULL);
     
     // Set power on:
     I8080SystemSetPowerState(sys8080, true);

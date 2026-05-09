@@ -50,7 +50,7 @@ I8080SystemCreate(
         I8080InstrTableInit(&sys8080->itbl, I8080DefaultISA);
         
         sys8080->tty = *I8080DeviceTTY;
-        I8080DevBusRegisterDevice(sys8080->devbus, &sys8080->tty, NULL);
+        I8080DevBusRegisterDevice(sys8080->devbus, 0, &sys8080->tty, NULL);
         
         sys8080->state = kI8080SystemStateOff;
         
@@ -84,7 +84,7 @@ I8080SystemCreateWithTTYContext(
         built_in_context = (I8080DeviceTTYContext_t*)sys8080->aux_data;
         sys8080->aux_data += sizeof(I8080DeviceTTYContext_t);
         *built_in_context = *tty_context;
-        I8080DevBusRegisterDevice(sys8080->devbus, &sys8080->tty, built_in_context);
+        I8080DevBusRegisterDevice(sys8080->devbus, 0, &sys8080->tty, built_in_context);
         
         sys8080->state = kI8080SystemStateOff;
         

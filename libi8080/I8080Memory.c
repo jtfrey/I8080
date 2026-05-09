@@ -119,7 +119,7 @@ I8080MemRead(
 {
     uint8_t     out_byte = 0x00;
     
-    if ( ! mem->callbacks.read || ! mem->callbacks.read(mem, addr, &out_byte, mem->context) ) {
+    if ( ! mem->callbacks.read || ! mem->callbacks.read(mem, &addr, &out_byte, mem->context) ) {
         if ( mem->pages[addr >> 8] ) out_byte = mem->pages[addr >> 8]->bytes[addr & 0xFF];
     }
     return out_byte;
@@ -134,7 +134,7 @@ I8080MemWrite(
     uint8_t     byte
 )
 {
-    if ( ! mem->callbacks.write || ! mem->callbacks.write(mem, addr, byte, mem->context) ) {
+    if ( ! mem->callbacks.write || ! mem->callbacks.write(mem, &addr, byte, mem->context) ) {
         if ( ! mem->pages[addr >> 8] ) {
             mem->pages[addr >> 8] = (I8080MemPage_t*)calloc(1, sizeof(I8080MemPage_t));
             if ( ! mem->pages[addr >> 8] ) {
@@ -168,14 +168,14 @@ static
 bool
 I8080MemUnmappedRead(
     I8080MemRef         mem,
-    I8080Addr_t         addr,
+    I8080Addr_t         *addr,
     uint8_t             *byte,
     const void          *context
 )
 {
     I8080MemUnmapped_t  *unmapped = (I8080MemUnmapped_t*)context;
     
-    if ( addr >= unmapped->base_address && (addr - unmapped->base_address) < unmapped->unmapped_size ) {
+    if ( *addr >= unmapped->base_address && (*addr - unmapped->base_address) < unmapped->unmapped_size ) {
         *byte = unmapped->unmapped_byte;
         return true;
     }
@@ -191,14 +191,14 @@ static
 bool
 I8080MemUnmappedWrite(
     I8080MemRef         mem,
-    I8080Addr_t         addr,
+    I8080Addr_t         *addr,
     uint8_t             byte,
     const void          *context
 )
 {
     I8080MemUnmapped_t  *unmapped = (I8080MemUnmapped_t*)context;
     
-    if ( addr >= unmapped->base_address && (addr - unmapped->base_address) < unmapped->unmapped_size ) return true;
+    if ( *addr >= unmapped->base_address && (*addr - unmapped->base_address) < unmapped->unmapped_size ) return true;
     if ( unmapped->next_callbacks && unmapped->next_callbacks->write ) {
         return unmapped->next_callbacks->write(mem, addr, byte, unmapped->next_context);
     }
@@ -221,15 +221,15 @@ static
 bool
 I8080MemROMRead(
     I8080MemRef     mem,
-    I8080Addr_t     addr,
+    I8080Addr_t     *addr,
     uint8_t         *byte,
     const void      *context
 )
 {
     I8080MemROM_t   *rom = (I8080MemROM_t*)context;
-    I8080Addr_t     rom_addr = addr - rom->rom_addr;
+    I8080Addr_t     rom_addr = *addr - rom->rom_addr;
     
-    if ( addr >= rom->rom_addr && rom_addr < rom->rom_size ) {
+    if ( *addr >= rom->rom_addr && rom_addr < rom->rom_size ) {
         *byte = rom->rom_image[rom_addr];
         return true;
     }
@@ -245,15 +245,15 @@ static
 bool
 I8080MemROMWrite(
     I8080MemRef     mem,
-    I8080Addr_t     addr,
+    I8080Addr_t     *addr,
     uint8_t         byte,
     const void      *context
 )
 {
     I8080MemROM_t   *rom = (I8080MemROM_t*)context;
-    I8080Addr_t     rom_addr = addr - rom->rom_addr;
+    I8080Addr_t     rom_addr = *addr - rom->rom_addr;
     
-    if ( addr >= rom->rom_addr && rom_addr < rom->rom_size ) {
+    if ( *addr >= rom->rom_addr && rom_addr < rom->rom_size ) {
         return true;
     }
     if ( rom->next_callbacks && rom->next_callbacks->write ) {

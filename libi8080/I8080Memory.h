@@ -45,7 +45,9 @@ typedef struct I8080Mem * I8080MemRef;
  * The consumer code can provide a function that will be called in order
  * to allow reads against addresses to be intercepted and modified.
  * @param mem           reference to a system memory
- * @param addr          the address being read
+ * @param addr          pointer to the address being read; the arbiter
+ *                      can modify the address and return false to rewrite
+ *                      where in RAM the byte is coming from (mirroring)
  * @param byte          pointer where the byte should be transferred
  * @param context       opaque pointer to consumer-provided data
  * @return              the function should return boolean true if it
@@ -53,14 +55,16 @@ typedef struct I8080Mem * I8080MemRef;
  *                      not do anything; boolean false allows IO8080Mem
  *                      to handle the read itself
  */
-typedef bool (*I8080MemReadArbiterCallback)(I8080MemRef mem, I8080Addr_t addr, uint8_t *byte, const void *context);
+typedef bool (*I8080MemReadArbiterCallback)(I8080MemRef mem, I8080Addr_t* addr, uint8_t *byte, const void *context);
 
 /**
  * External function that intercepts memory writes
  * The consumer code can provide a function that will be called in order
  * to allow writes against addresses to be intercepted and modified.
  * @param mem           reference to a system memory
- * @param addr          the address being written
+ * @param addr          pointer to the address being written; the arbiter
+ *                      can modify the address and return false to rewrite
+ *                      where in RAM the byte is going (mirroring)
  * @param byte          the byte to be transferred
  * @param context       opaque pointer to consumer-provided data
  * @return              the function should return boolean true if it
@@ -68,7 +72,7 @@ typedef bool (*I8080MemReadArbiterCallback)(I8080MemRef mem, I8080Addr_t addr, u
  *                      not do anything; boolean false allows IO8080Mem
  *                      to handle the write itself
  */
-typedef bool (*I8080MemWriteArbiterCallback)(I8080MemRef mem, I8080Addr_t addr, uint8_t byte, const void *context);
+typedef bool (*I8080MemWriteArbiterCallback)(I8080MemRef mem, I8080Addr_t *addr, uint8_t byte, const void *context);
 
 /**
  * External callback functions available to an IO8080Mem object

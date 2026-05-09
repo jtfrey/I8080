@@ -152,6 +152,16 @@ void I8080DevBusReset(I8080DevBusRef devbus);
 void I8080DevBusShutdown(I8080DevBusRef devbus);
 
 /**
+ * Desired device id
+ * When registering a device on the bus, a specific id can be requested or
+ * the bus can be allowed to assign an id.
+ */
+typedef enum {
+    kI8080DevBusRegisterIdNextAvail = -1,       /*!< the bus should assign an available id to the device */
+    kI8080DevBusRegisterIdMask        = 0xFF    /*!< values in this range are requestable */
+} I8080DevBusRegisterId;
+
+/**
  * Register a device on the bus
  * The \p dev is registered with \p devbus under the modes it indicates.
  * The \p context pointer is associated with the device and will be passed
@@ -161,7 +171,7 @@ void I8080DevBusShutdown(I8080DevBusRef devbus);
  * @param context       user-defined pointer that is associated with the
  *                      device and passed to its callbacks when invoked
  */
-bool I8080DevBusRegisterDevice(I8080DevBusRef devbus, I8080DevicePtr dev, const void *context);
+bool I8080DevBusRegisterDevice(I8080DevBusRef devbus, I8080DevBusRegisterId req_id, I8080DevicePtr dev, const void *context);
 
 /**
  * Unregister a device from the bus
