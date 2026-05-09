@@ -178,7 +178,8 @@ LOOP:
 
 OUTPUT:
 102E:		0xD3  0x0A          OUT     #10         ; Write the char to stderr
-1030:		0xC3  0x0C  0x10    JMP     LOOP        ; Go back for another
+1030:		0xC3  0x15  0x10    JMP     LOOP        ; Go back for another
+
 DONE:
 1033:		0xF1                POP      PSW        ; pop registers off the stack
 1034:		0xE1                POP      HL
