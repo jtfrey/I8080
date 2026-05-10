@@ -38,6 +38,11 @@
 #cmakedefine HAS_TERMIOS_OLCUC
 
 /*
+ * Does this system have mmap?
+ */
+#cmakedefine HAS_MMAP
+
+/*
  * Does this compiler provide the __builtin_parity
  * function?
  */

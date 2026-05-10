@@ -22,13 +22,27 @@ endif()
 
 # Check for OLCUC output flag in termios
 check_c_source_compiles("
-include <termios.h>
+#include <termios.h>
 int main() {
     return OLCUC;
 }
 " HAS_TERMIOS_OLCUC)
 if(HAS_TERMIOS_OLCUC)
     message(STATUS "Found termios OLCUC")
+endif()
+
+# Check for mmap output flag in termios
+check_c_source_compiles("
+#include <sys/mman.h>
+int main() {
+    void    *p = mmap((void*)0, 0, 0, 0, 0, 0);
+    
+    munmap(p, 0);
+    return 0;
+}
+" HAS_MMAP)
+if(HAS_MMAP)
+    message(STATUS "Found mmap/munmap")
 endif()
 
 #

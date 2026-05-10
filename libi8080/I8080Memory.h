@@ -75,6 +75,17 @@ typedef bool (*I8080MemReadArbiterCallback)(I8080MemRef mem, I8080Addr_t* addr, 
 typedef bool (*I8080MemWriteArbiterCallback)(I8080MemRef mem, I8080Addr_t *addr, uint8_t byte, const void *context);
 
 /**
+ * External function that does cleanup
+ * When a system memory object is destroyed, this function frees any
+ * resources associated with the callbacks registered with the object.
+ *
+ * This can include deallocation of a dynamically-allocated \p
+ * context.
+ * @param mem           reference to the system memory being destroyed
+ */
+typedef void (*I8080MemCleanupCallback)(I8080MemRef mem, const void *context);
+
+/**
  * External callback functions available to an IO8080Mem object
  * External callback functions on a system memory object allow greater
  * flexibility in how the memory behaves.  For example:
@@ -109,6 +120,7 @@ typedef bool (*I8080MemWriteArbiterCallback)(I8080MemRef mem, I8080Addr_t *addr,
 typedef struct {
     I8080MemReadArbiterCallback     read;           /*!< NULL or a pointer to a function to intercept reads */
     I8080MemWriteArbiterCallback    write;          /*!< NULL or a pointer to a function to intercept reads */
+    I8080MemCleanupCallback         cleanup;        /*!< NULL or a pointer to a function to cleanup on destroy */
 } I8080MemCallbacks;
 
 /**
@@ -233,14 +245,23 @@ typedef struct {
     //
     const I8080MemCallbacks *next_callbacks;
     const void              *next_context;
-} I8080MemUnmapped_t;
+} I8080MemUnmappedContext_t;
 
 /**
  * Unmapped segment callbacks
- * Address of the callbacks that implement the \ref I8080MemUnmapped_t
+ * Address of the callbacks that implement the \ref I8080MemUnmappedContext_t
  * operations.
  */
 extern const I8080MemCallbacks *I8080MemUnmappedCallbacks;
+
+/**
+ * Optional behaviors for \p I8080MemROMContext_t instances
+ * Do not set any bits other than those described here!
+ */
+typedef enum {
+    kI8080MemROMOptsDeallocateAtCleanup = 0b1   /*!< the caller can clear this bit to prevent the ROM from being
+                                                     deallocated when the \p I8080MemROMContext_t is destroyed */
+} I8080MemROMOpts_t;
 
 /**
  * Context data structure for a read-only memory segment
@@ -248,22 +269,116 @@ extern const I8080MemCallbacks *I8080MemUnmappedCallbacks;
  * to associate a static, immutable sequence of bytes with
  * a range of addresses in the system memory space.
  *
+ * Instances of this context MUST be dynamically allocated;
+ * a set of functions exist in the API to assist in this
+ * task.  If you absolutely MUST have a static instance,
+ * just be sure to clear the \ref kI8080MemROMOptsDeallocateAtCleanup
+ * bit in the \p options bitvector!
+ *
  * The next_callbacks and next_context allow additional callbacks
  * to be chained with this one if it does NOT handle the
  * operation.
  */
 typedef struct {
-    I8080Addr_t         rom_addr;           /*!< address at which the ROM should be mapped */
-    I8080Addr_t         rom_size;           /*!< the number of bytes in the ROM image */
-    uint8_t             *rom_image;         /*!< pointer to the array of bytes that comprise the ROM image */
+    I8080MemROMOpts_t           options;    /*!< options */
+    I8080Addr_t                 rom_addr;   /*!< address at which the ROM should be mapped */
+    I8080Addr_t                 rom_size;   /*!< the number of bytes in the ROM image; zero implies the full 64 KiB */
+    uint8_t                     *rom_image; /*!< pointer to the array of bytes that comprise the ROM image */
     //
     const I8080MemCallbacks *next_callbacks;
     const void              *next_context;
-} I8080MemROM_t;
+} I8080MemROMContext_t;
+
+/**
+ * Type of a pointer to a ROM image
+ */
+typedef I8080MemROMContext_t * I8080MemROMContextPtr;
+
+/**
+ * Allocate a ROM image with bytes in memory
+ * If \p should_copy is false, then the \p bytes_len bytes at \p bytes is simply
+ * wrapped by a \ref I8080MemROMContext_t; if \p should_copy is true, then the
+ * \ref I8080MemROMContext_t is allocated such that \p bytes is copied into it.
+ *
+ * If \p bytes is NULL then a buffer of \p bytes_len is allocated and the \p rom_image
+ * field in the returned \p I8080MemROMContextPtr can be modified as desired.
+ * @param rom_addr      address at which the ROM should be mapped
+ * @param bytes         pointer to the bytes comprising the ROM; if NULL, a buffer
+ *                      will be created and zeroed and the caller can modify it as
+ *                      desired
+ * @param bytes_len     number of bytes in the ROM image; zero (0) implies the full
+ *                      64 KiB address space
+ * @param should_copy   if false then the returned \ref I8080MemROMContextPtr merely wraps
+ *                      the \p bytes pointer -- which means \p bytes cannot be free'd
+ *                      by the caller while the \p I8080MemROMContextPtr is in-use!
+ * @return              pointer to the allocated and initialized I8080MemROMContext_t,
+ *                      NULL on error
+ */
+I8080MemROMContextPtr I8080MemROMWithBytes(I8080Addr_t rom_addr, const void *bytes, I8080Addr_t bytes_len, bool should_copy);
+
+/**
+ * Allocate a ROM image with bytes from an open file
+ * Create a \ref I8080MemROMContext_t that wraps at most \p bytes_len bytes read from the
+ * open FILE, \p fptr.  A memory buffer is created as part of the \ref I8080MemROMContext_t
+ * to hold the bytes.
+ * @param rom_addr      address at which the ROM should be mapped
+ * @param fptr          the file from which the bytes will be read
+ * @param bytes_len     number of bytes in the ROM image; zero (0) implies the full
+ *                      64 KiB address space
+ * @return              pointer to the allocated and initialized I8080MemROMContext_t, NULL
+ *                      on error
+ */
+I8080MemROMContextPtr I8080MemROMWithFilePtr(I8080Addr_t rom_addr, FILE *fptr, I8080Addr_t bytes_len);
+
+/**
+ * Allocate a ROM image with the contents of a file
+ * Create a \ref I8080MemROMContext_t that wraps at most \p 64 KiB read from the file
+ * at \p filepath.  A memory buffer is created as part of the \ref I8080MemROMContext_t
+ * to hold the bytes.
+ * @param rom_addr      address at which the ROM should be mapped
+ * @param filepath      the file from which the ROM bytes should be read
+ * @return              pointer to the allocated and initialized I8080MemROMContext_t, NULL
+ *                      on error
+ */
+I8080MemROMContextPtr I8080MemROMWithFile(I8080Addr_t rom_addr, const char *filepath);
+
+/**
+ * Allocate a ROM image with a range of bytes from a file
+ * Similar to \ref I8080MemROMWithFile(), but rather than reading bytes from
+ * the start of the file the read can be repositioned using the \p offset
+ * argument.  At most 64 KiB will be read.
+ * @param rom_addr      address at which the ROM should be mapped
+ * @param filepath      the file from which the ROM bytes should be read
+ * @param offset        offset at which the ROM should be read from the
+ *                      file
+ * @param length        number of bytes to read from the file; zero (0) implies the full
+ *                      64 KiB address space
+ * @return              pointer to the allocated and initialized I8080MemROMContext_t, NULL
+ *                      on error
+ */
+I8080MemROMContextPtr I8080MemROMWithByteRangeInFile(I8080Addr_t rom_addr, const char *filepath, off_t offset, I8080Addr_t length);
+
+#ifdef HAS_MMAP
+/**
+ * Allocate a ROM image by mapping a file into virtual memory
+ * Bytes in the file associated with file descriptor \p fd are mapped into the
+ * native system's virtual address space.  The byte range (up to 64 KiB) starting
+ * at \p offset in the file is in-scope.
+ * @param rom_addr      address at which the ROM should be mapped
+ * @param filepath      the file from which the ROM bytes should be read
+ * @param offset        offset at which the ROM should be read from the
+ *                      file
+ * @param length        number of bytes to read from the file; zero (0) implies the full
+ *                      64 KiB address space
+ * @return              pointer to the allocated and initialized I8080MemROMContext_t,
+ *                      NULL on error
+ */
+I8080MemROMContextPtr I8080MemROMWithMappedFile(I8080Addr_t rom_addr, int fd, off_t offset, I8080Addr_t length);
+#endif
 
 /**
  * ROM segment callbacks
- * Address of the callbacks that implement the \ref I8080MemROM_t
+ * Address of the callbacks that implement the \ref I8080MemROMContext_t
  * operations.
  */
 extern const I8080MemCallbacks *I8080MemROMCallbacks;
