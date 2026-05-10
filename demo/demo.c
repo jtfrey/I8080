@@ -39,7 +39,7 @@ uint8_t     prgrm[] = {
 
 /* OUTPUT:    */
 /* 102E       */0xD3, 0x0A,         /* OUT     #10         ; Write the char to stderr       */
-/* 1030       */0xC3, 0x0C, 0x10,   /* JMP     LOOP        ; Go back for another            */
+/* 1030       */0xC3, 0x15, 0x10,   /* JMP     LOOP        ; Go back for another            */
 /* DONE:      */
 /* 1033:      */0xF1,               /* POP      PSW                                         */
 /* 1034:      */0xE1,               /* POP      HL                                          */
@@ -52,21 +52,26 @@ uint8_t     prgrm[] = {
 /* 103A       */0xC9                /* RET                                                  */
 
     };
-
-volatile sig_atomic_t keepRunning = 1;
+    
+volatile I8080SystemPtr sys8080 = NULL;
 
 void handle_sigint(int sig) {
-    keepRunning = 0;
+    I8080SystemInterrupt(sys8080);
 }
 
 int
 main()
 {
-    I8080SystemPtr                  sys8080 = NULL;
-    I8080Device_t                   devStderr;
+    I8080Device_t                   devStderr, devFile;
     I8080DeviceTTYContext_t         tty_context = {
                                         .stdin_context.options = kI8080DeviceStdInputOptsAll,
                                         .stdout_context.options = kI8080DeviceStdOutputOptsAll };
+    I8080DeviceFileContext_t        file_context = {
+                                        .variant = kI8080DeviceFileVariantPath,
+                                        .path = {
+                                            .filepath = "./output.txt",
+                                            .mode = "a+" }
+                                        };
     int                             instr_num = 0;
     
     signal(SIGINT, handle_sigint);
@@ -76,9 +81,13 @@ main()
     
     sys8080 = I8080SystemCreateWithTTYContext(kI8080SystemOpts2MHzClock, 0, &tty_context);
     
-    // Register stderr as output device #1:
+    // Register stderr as output device #10:
     devStderr = *I8080DeviceStdError;
     I8080DevBusRegisterDevice(sys8080->devbus, 10, &devStderr, NULL);
+    
+    // Register the file as output device #5:
+    devFile = *I8080DeviceFileOut;
+    I8080DevBusRegisterDevice(sys8080->devbus, 5, &devFile, &file_context);
     
     // Set power on:
     I8080SystemSetPowerState(sys8080, true);
@@ -96,7 +105,7 @@ main()
         
         if ( did_fail ) break;
         instr_num++;
-    } while ( keepRunning && (sys8080->state & kI8080SystemStateRunning) );
+    } while ( I8080SystemIsRunning(sys8080->state) );
     
     printf("\n");
     I8080RegistersPrint(stdout, &sys8080->rgstrs);

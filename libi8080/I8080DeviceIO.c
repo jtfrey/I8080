@@ -535,3 +535,154 @@ I8080Device_t __I8080DeviceTTY = {
             .shutdown = I8080DeviceTTYShutdown
         };
 const I8080DevicePtr I8080DeviceTTY = &__I8080DeviceTTY;
+
+//
+
+static
+void
+I8080DeviceFileInOutReset(
+    I8080DevicePtr  dev,
+    const void      *context
+)
+{
+    I8080DeviceFileContext_t    *file_context = (I8080DeviceFileContext_t*)context;
+    
+    switch ( file_context->variant ) {
+        case kI8080DeviceFileVariantPath: {
+            FILE    *fptr = fopen(file_context->path.filepath, file_context->path.mode);
+            if ( ! fptr ) {
+                ERROR("Unable to open file `%s` in mode `%s`", file_context->path.filepath, file_context->path.mode);
+            } else {
+                file_context->path.fptr = fptr;
+            }
+            break;
+        }
+        case kI8080DeviceFileVariantFILEPtr:
+            break;
+    }
+}
+
+//
+
+static
+void
+I8080DeviceFileInOutShutdown(
+    I8080DevicePtr  dev,
+    const void      *context
+)
+{
+    I8080DeviceFileContext_t    *file_context = (I8080DeviceFileContext_t*)context;
+    
+    switch ( file_context->variant ) {
+        case kI8080DeviceFileVariantPath: {
+            if ( file_context->path.fptr ) {
+                fflush(file_context->path.fptr);
+                fclose(file_context->path.fptr);
+                file_context->path.fptr = NULL;
+            }
+            break;
+        }
+        case kI8080DeviceFileVariantFILEPtr: {
+            if ( file_context->fileptr.should_close_on_shutdown && file_context->fileptr.fptr ) {
+                fflush(file_context->fileptr.fptr);
+                fclose(file_context->fileptr.fptr);
+                file_context->fileptr.fptr = NULL;
+            }
+            break;
+        }
+    }
+}
+
+//
+
+static
+uint8_t
+I8080DeviceFileInOutRead(
+    I8080DevicePtr  dev,
+    const void      *context
+)
+{
+    I8080DeviceFileContext_t    *file_context = (I8080DeviceFileContext_t*)context;
+    
+    switch ( file_context->variant ) {
+        case kI8080DeviceFileVariantPath: {
+            if ( file_context->path.fptr ) {
+                return fgetc(file_context->path.fptr);
+            }
+            break;
+        }
+        case kI8080DeviceFileVariantFILEPtr: {
+            if ( file_context->fileptr.fptr ) {
+                return fgetc(file_context->fileptr.fptr);
+            }
+            break;
+        }
+    }
+    return 0xFF;
+}
+
+//
+
+static
+void
+I8080DeviceFileInOutWrite(
+    I8080DevicePtr  dev,
+    uint8_t         byte,
+    const void      *context
+)
+{
+    I8080DeviceFileContext_t    *file_context = (I8080DeviceFileContext_t*)context;
+    
+    switch ( file_context->variant ) {
+        case kI8080DeviceFileVariantPath: {
+            if ( file_context->path.fptr ) {
+                fputc(byte, file_context->path.fptr);
+            }
+            break;
+        }
+        case kI8080DeviceFileVariantFILEPtr: {
+            if ( file_context->fileptr.fptr ) {
+                fputc(byte, file_context->fileptr.fptr);
+            }
+            break;
+        }
+    }
+}
+
+//
+
+I8080Device_t __I8080DeviceFileIn = {
+            .device_name = "file-in",
+            .device_mode = kI8080DeviceModeInput,
+            .input = {
+                .read = I8080DeviceFileInOutRead },
+            .output = {
+                .write = NULL },
+            .reset = I8080DeviceFileInOutReset,
+            .shutdown = I8080DeviceFileInOutShutdown
+        };
+const I8080DevicePtr I8080DeviceFileIn = &__I8080DeviceFileIn;
+
+I8080Device_t __I8080DeviceFileOut = {
+            .device_name = "file-out",
+            .device_mode = kI8080DeviceModeOutput,
+            .input = {
+                .read = NULL },
+            .output = {
+                .write = I8080DeviceFileInOutWrite },
+            .reset = I8080DeviceFileInOutReset,
+            .shutdown = I8080DeviceFileInOutShutdown
+        };
+const I8080DevicePtr I8080DeviceFileOut = &__I8080DeviceFileOut;
+
+I8080Device_t __I8080DeviceFileInOut = {
+            .device_name = "file-in+out",
+            .device_mode = kI8080DeviceModeInputOutput,
+            .input = {
+                .read = I8080DeviceFileInOutRead },
+            .output = {
+                .write = I8080DeviceFileInOutWrite },
+            .reset = I8080DeviceFileInOutReset,
+            .shutdown = I8080DeviceFileInOutShutdown
+        };
+const I8080DevicePtr I8080DeviceFileInOut = &__I8080DeviceFileInOut;

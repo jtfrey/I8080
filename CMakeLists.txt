@@ -10,3 +10,4 @@ project(I8080
 
 add_subdirectory(libi8080)
 add_subdirectory(demo)
+add_subdirectory(i8e8e)

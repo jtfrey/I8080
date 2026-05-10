@@ -148,13 +148,25 @@ I8080SystemSetPowerState(
 
 //
 
+void
+I8080SystemInterrupt(
+    I8080SystemPtr  sys8080
+)
+{
+    if ( I8080SystemIsReady(sys8080->state) ) {
+        sys8080->state = (sys8080->state & ~kI8080SystemStateRunning) | kI8080SystemStateInterrupt;
+    }
+}
+
+//
+
 bool
 I8080SystemSetPC(
     I8080SystemPtr  sys8080,
     I8080Addr_t     origin
 )
 {
-    if ( sys8080->state & kI8080SystemStateOn ) {
+    if ( I8080SystemIsReady(sys8080->state) ) {
         sys8080->rgstrs.PC = origin;
         DEBUG("Forcibly set the PC to $%04hX", origin);
         return true;
@@ -172,11 +184,11 @@ I8080SystemStep(
 {
     bool            ok = false;
     
-    if ( sys8080->state & kI8080SystemStateOn ) {
+    if ( I8080SystemIsReady(sys8080->state) ) {
         I8080Instr_t    instr;
         I8080CycleCount elapsed = 0;
         
-        if ( ! (sys8080->state & kI8080SystemStateRunning) ) {
+        if ( ! I8080SystemIsRunning(sys8080->state) ) {
             sys8080->state |= kI8080SystemStateRunning;
             sys8080->last_cycle = I8080MicrosecondsMakeNow();
             INFO("System transitioned to running state");

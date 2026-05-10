@@ -25,11 +25,47 @@
  * emulated system is in.
  */
 typedef enum {
-    kI8080SystemStateOff        = 0b000,    /*!< power off, nothing happening */
-    kI8080SystemStateOn         = 0b001,    /*!< power is on, may or may not be running code */
-    kI8080SystemStateRunning    = 0b010,    /*!< a program has started running */
-    kI8080SystemStateBadInstr   = 0b100     /*!< an invalid instruction was encountered */
+    kI8080SystemStateOff        = 0b0,      /*!< power off, nothing happening */
+    kI8080SystemStateOn         = 0b1,      /*!< power is on, may or may not be running code */
+    kI8080SystemStateRunning    = 0b10,     /*!< a program has started running */
+    kI8080SystemStateInterrupt  = 0b100,    /*!< execution was interrupted */
+    kI8080SystemStateBadInstr   = 0b1000,   /*!< an invalid instruction was encountered */
+    
+    kI8080SystemStateError      = 0b1100    /*!< all error states */
 } I8080SystemState_t;
+
+/**
+ * State == system is off?
+ * Evaluates to true if \p STATE shows the system to be off.
+ * @param STATE         value of type I8080SystemState_t
+ */
+#define I8080SystemIsOff(STATE)     ((STATE) == kI8080SystemStateOff)
+
+/**
+ * State == system is on?
+ * Evaluates to true if \p STATE shows the system to be on.  Other
+ * aspects of being on (running, error) are ignored.
+ * @param STATE         value of type I8080SystemState_t
+ */
+#define I8080SystemIsOn(STATE)        (((STATE) & kI8080SystemStateOn) == kI8080SystemStateOn)
+
+/**
+ * State == system is ready?
+ * Evaluates to true if \p STATE shows the system is on and not in
+ * an error state.
+ * @param STATE         value of type I8080SystemState_t
+ */
+#define I8080SystemIsReady(STATE)   ((((STATE) & kI8080SystemStateOn) == kI8080SystemStateOn) && \
+                                     (((STATE) & kI8080SystemStateError) == 0))
+
+/**
+ * State == system is running?
+ * Evaluates to true if \p STATE shows the system is on and currently
+ * running a program
+ * @param STATE         value of type I8080SystemState_t
+ */
+#define I8080SystemIsRunning(STATE) ((((STATE) & kI8080SystemStateRunning) == kI8080SystemStateRunning) && \
+                                     (((STATE) & kI8080SystemStateError) == 0))
 
 /**
  * Optional behaviors of the system
@@ -140,6 +176,15 @@ void I8080SystemReset(I8080SystemPtr sys8080);
  *                      successful
  */
 bool I8080SystemSetPowerState(I8080SystemPtr sys8080, bool is_on);
+
+/** 
+ * Break out of running program
+ * If the system is in the on and running state, force it into the
+ * on but not running state.  The \ref kI8080SystemStateInterrupt
+ * bit is set on the system state.
+ * @param sys8080       the system to alter
+ */
+void I8080SystemInterrupt(I8080SystemPtr sys8080);
 
 /**
  * Set the program counter

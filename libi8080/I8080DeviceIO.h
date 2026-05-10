@@ -344,4 +344,78 @@ typedef struct {
     I8080DeviceStdOutputContext_t   stdout_context;
 } I8080DeviceTTYContext_t;
 
+
+
+/** 
+ * I/O device definition for input from a file
+ * Pointer to a device definition that reads bytes from a file.
+ * The file is communicated to the device via a
+ * \ref I8080DeviceFileContext_t context provided at registration.  The
+ * consumer should copy the contents of this definition to their own
+ * \ref I8080Device_t data structure rather than registering \p I8080DeviceFileIn
+ * directly on a bus.
+ */
+extern const I8080DevicePtr I8080DeviceFileIn;
+
+/** 
+ * I/O device definition for output to a file
+ * Pointer to a device definition that writes bytes to a file.
+ * The file is communicated to the device via a
+ * \ref I8080DeviceFileContext_t context provided at registration.  The
+ * consumer should copy the contents of this definition to their own
+ * \ref I8080Device_t data structure rather than registering \p I8080DeviceFileOut
+ * directly on a bus.
+ */
+extern const I8080DevicePtr I8080DeviceFileOut;
+
+/** 
+ * I/O device definition for input/output from/to a file
+ * Pointer to a device definition that reads/writes bytes from/to a file.
+ * The file is communicated to the device via a
+ * \ref I8080DeviceFileContext_t context provided at registration.  The
+ * consumer should copy the contents of this definition to their own
+ * \ref I8080Device_t data structure rather than registering \p I8080DeviceFileInOut
+ * directly on a bus.
+ */
+extern const I8080DevicePtr I8080DeviceFileInOut;
+
+/**
+ * I8080DeviceFile variant
+ * The \ref I8080DeviceFileContext_t structure embodies two different
+ * configuration methods:  a filepath and mode string or an
+ * already-open FILE pointer.  This enumeration selects which is
+ * chosen.
+ */
+typedef enum {
+    kI8080DeviceFileVariantPath,        /*!< I8080DeviceFile using filepath and mode */ 
+    kI8080DeviceFileVariantFILEPtr      /*!< I8080DeviceFile using FILE pointer */
+} I8080DeviceFileVariant_t;
+
+/**
+ * File device context data
+ * Provides configurational parameters to a \ref I8080DeviceFileIn,
+ * \ref I8080DeviceFileOut, or \ref I8080DeviceFileInOut device.
+ *
+ * The caller should NOT make changes to this data structure once passed to the
+ * \ref I8080DevBusRegisterDevice() function.  The device references the
+ * original copy!
+ */
+typedef struct {
+    I8080DeviceFileVariant_t    variant;        /*!< the I8080DeviceFile variant */ 
+    union {
+        struct {
+            const char          *filepath;      /*!< path to the file to be opened */
+            const char          *mode;          /*!< \ref fopen() mode in which to open the file */
+            FILE                *fptr;          /*!< set by the device once the file is open */
+        } path;
+        struct {
+            bool                should_close_on_shutdown;   /*!< true = close the file on first device shutdown;
+                                                                 the file will no longer be open or usable if the
+                                                                 device is reset */
+            FILE                *fptr;          /*!< the externally-opened FILE pointer to associate with this
+                                                     device */
+        } fileptr;
+    };
+} I8080DeviceFileContext_t;
+
 #endif /* __I8080DEVICEIO_H__ */
