@@ -43,7 +43,7 @@ Two non-standard fields are included:
 
 ### System memory
 
-The 8080 could be used with a variety of memory technologies:  RAM, ROM, etc.  Addresses were 16-bit, for a maximum of 65 KiB of directly-addressable memory.
+The 8080 could be used with a variety of memory technologies:  RAM, ROM, etc.  Addresses were 16-bit, for a maximum of 64 KiB of directly-addressable memory.
 
 It's tempting on a modern system to just use an array of 65536 bytes for this piece.  My demo program was a meager 59 bytes, so that would be massive overkill.  I could also imagine having a standard subroutine ROM that I'd like to map to a section of the address space, and having it be mutable would be very problematic!
 
