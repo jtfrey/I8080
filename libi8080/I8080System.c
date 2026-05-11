@@ -211,6 +211,7 @@ I8080SystemStep(
                 }
                 sys8080->last_cycle = now;
             }
+            ok = true;
         } else {
             // Stop running the program and indicate an invalid opcode was encountered:
             sys8080->state = kI8080SystemStateOn | kI8080SystemStateBadInstr;
@@ -230,8 +231,9 @@ I8080SystemRun(
 )
 {
     if ( I8080SystemSetPC(sys8080, origin) ) {
-        while ( I8080SystemStep(sys8080, NULL) ) {
-        }
+        do {
+            if ( ! I8080SystemStep(sys8080, NULL) ) break;
+        } while ( I8080SystemIsRunning(sys8080->state) );
     }
 }
 

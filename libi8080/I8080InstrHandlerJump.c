@@ -158,7 +158,7 @@ I8080InstrDispatchCall(
     if ( is_satisfied ) {
         I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (sys8080->rgstrs.PC >> 8));
         I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (sys8080->rgstrs.PC & 0xFF));
-        DEBUG("Call%s to $%04hX TAKEN, $%04hX pushed to stack", call_type, addr, sys8080->rgstrs.PC);
+        DEBUG("Call%s to $%04hX TAKEN, $%04hX pushed to stack @ $%04hX", call_type, addr, sys8080->rgstrs.PC, sys8080->rgstrs.SP + 1);
         sys8080->rgstrs.PC = addr;
         return 17;
     } else {

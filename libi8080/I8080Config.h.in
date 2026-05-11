@@ -31,6 +31,11 @@
 #define I8080_VERSION_MINOR @PROJECT_VERSION_MINOR@
 #define I8080_VERSION_PATCH @PROJECT_VERSION_PATCH@
 
+extern const char     *I8080VersionString;
+extern const unsigned I8080VersionMajor;
+extern const unsigned I8080VersionMinor;
+extern const unsigned I8080VersionPatch;
+
 /*
  * Does this system's termios include the force-to-uppercase
  * output flag?

@@ -42,8 +42,10 @@ I8080MemCreate(
     I8080Mem_t  *mem = (I8080Mem_t*)calloc(1, sizeof(I8080Mem_t));
     
     if ( mem ) {
-        if ( callbacks ) mem->callbacks = *callbacks;
-        if ( context ) mem->context = context;
+        if ( callbacks ) {
+            mem->callbacks = *callbacks;
+            mem->context = context;
+        }
         INFO("Created memory subsystem %p", mem);
     }
     return mem;
@@ -67,6 +69,20 @@ I8080MemDestroy(
     if ( mem->callbacks.cleanup ) mem->callbacks.cleanup(mem, mem->context);
     free((void*)mem);
     INFO("Destroyed memory subsystem %p", mem);
+}
+
+//
+
+void
+I8080MemSetCallbacks(
+    I8080MemRef             mem,
+    const I8080MemCallbacks *callbacks,
+    const void              *context
+)
+{
+    if ( mem->callbacks.cleanup ) mem->callbacks.cleanup(mem, mem->context);
+    mem->callbacks = *callbacks;
+    mem->context = context;
 }
 
 //
@@ -271,9 +287,11 @@ I8080MemROMWrite(
 
 //
 
+#ifdef HAS_MMAP
 enum {
     kI8080MemROMOptsNeedMunmap = 0x80000000
 };
+#endif
 
 static
 void
@@ -284,9 +302,11 @@ I8080MemROMCleanup(
 {
     I8080MemROMContext_t    *rom = (I8080MemROMContext_t*)context;
     
+#ifdef HAS_MMAP
     if ( rom->rom_image && (rom->options & kI8080MemROMOptsNeedMunmap) ) {
         munmap(rom->rom_image, rom->rom_size ? rom->rom_size : 0x10000);
     }
+#endif
     if ( rom->options & kI8080MemROMOptsDeallocateAtCleanup ) {
         free((void*)rom);
     }
@@ -304,27 +324,27 @@ I8080MemROMWithBytes(
 {
     I8080MemROMContext_t    *new_ROM = NULL;
 
-    if ( bytes_len ) {
+    if ( should_copy || ! bytes ) {
+        new_ROM = (I8080MemROMContext_t*)calloc(1, sizeof(I8080MemROMContext_t) + 
+                        bytes_len ? bytes_len : 0x10000);
+    } else {
+        new_ROM = (I8080MemROMContext_t*)calloc(1, sizeof(I8080MemROMContext_t));
+    }
+    if ( new_ROM ) {
         if ( should_copy || ! bytes ) {
-            new_ROM = (I8080MemROMContext_t*)calloc(1, sizeof(I8080MemROMContext_t) + 
-                            bytes_len ? bytes_len : 0x10000);
+            void        *dst = (void*)new_ROM + sizeof(I8080MemROMContext_t);
+        
+            if ( bytes ) memcpy(dst, bytes, bytes_len ? bytes_len : 0x10000);
+            new_ROM->rom_image = (uint8_t*)dst;
         } else {
-            new_ROM = (I8080MemROMContext_t*)calloc(1, sizeof(I8080MemROMContext_t));
+            new_ROM->rom_image = (uint8_t*)bytes;
         }
-        if ( new_ROM ) {
-            if ( should_copy || ! bytes ) {
-                void        *dst = (void*)new_ROM + sizeof(I8080MemROMContext_t);
-            
-                if ( bytes ) memcpy(dst, bytes, bytes_len ? bytes_len : 0x10000);
-                new_ROM->rom_image = (uint8_t*)dst;
-            } else {
-                new_ROM->rom_image = (uint8_t*)bytes;
-            }
-            new_ROM->rom_addr = rom_addr;
-            new_ROM->rom_size = bytes_len;
-        } else {
-            ERROR("Unable to allocate %hd B ROM image (errno=%d)", bytes_len, errno);
-        }
+        new_ROM->rom_addr = rom_addr;
+        new_ROM->rom_size = bytes_len;
+        new_ROM->next_callbacks = NULL;
+        new_ROM->next_context = NULL;
+    } else {
+        ERROR("Unable to allocate %hd B ROM image (errno=%d)", bytes_len, errno);
     }
     return new_ROM;
 }
@@ -340,16 +360,15 @@ I8080MemROMWithFilePtr(
 {
     I8080MemROMContext_t    *new_ROM = NULL;
     
-    if ( fptr && bytes_len ) {
+    if ( fptr ) {
         new_ROM = (I8080MemROMContext_t*)calloc(1, sizeof(I8080MemROMContext_t) + 
-                        bytes_len ? bytes_len : 0x10000);
+                        (bytes_len ? bytes_len : 0x10000));
         if ( new_ROM ) {
             void        *dst = (void*)new_ROM + sizeof(I8080MemROMContext_t);
-            
-            fread(dst, 1, bytes_len ? bytes_len : 0x10000, fptr);
+            ssize_t     actual_len = fread(dst, 1, bytes_len ? bytes_len : 0x10000, fptr);
             
             new_ROM->rom_addr = rom_addr;
-            new_ROM->rom_size = bytes_len;
+            new_ROM->rom_size = (actual_len > 0xFFFF) ? 0 : actual_len;
             new_ROM->rom_image = (uint8_t*)dst;
             new_ROM->next_callbacks = NULL;
             new_ROM->next_context = NULL;
@@ -458,6 +477,7 @@ I8080MemROMWithMappedFile(
             if ( segment ) {
                 new_ROM = (I8080MemROMContext_t*)calloc(1, sizeof(I8080MemROMContext_t));
                 if ( new_ROM ) {
+                    new_ROM->options |= kI8080MemROMOptsNeedMunmap;
                     new_ROM->rom_addr = rom_addr;
                     new_ROM->rom_size = length;
                     new_ROM->rom_image = segment;

@@ -22,6 +22,34 @@
 typedef uint16_t I8080Addr_t;
 
 /**
+ * Parse an address from a string
+ * The \p in_str is parsed to get a \ref I8080Addr_t.
+ * @param in_str            the string (maybe) containing an
+ *                          address
+ * @param out_addr          set to the parsed address if successful
+ * @return                  boolean true if an address was parsed
+ */
+static inline
+bool
+I8080AddrParse(
+    const char      *in_str,
+    I8080Addr_t     *out_addr,
+    const char*     *out_endstr
+)
+{
+    char            *endptr = NULL;
+    int             base = 0;
+    long            v;
+    
+    if ( *in_str == '$' ) in_str++, base=16;
+    v = strtol(in_str, &endptr, base);
+    if ( (endptr == in_str) || (v < 0) || (v > 0xFFFF) ) return false;
+    *out_addr = (I8080Addr_t)v;
+    if ( out_endstr) *out_endstr = (const char*)endptr;
+    return true;
+}
+
+/**
  * A page of memory
  * Memory is split into pages that are 256 bytes in size.  The offset within
  * a page is thus addressable using an 8-bit unsigned integer.
@@ -151,6 +179,15 @@ I8080MemRef I8080MemCreate(const I8080MemCallbacks *callbacks, const void *conte
  * @param mem           the system memory object to destroy
  */
 void I8080MemDestroy(I8080MemRef mem);
+
+/**
+ * Modify the system memory object's callbacks
+ * Change the callbacks and context associated with \p mem.
+ * @param mem           the system memory object to modify
+ * @param callbacks     the new callbacks
+ * @param context       the new context to go with the callbacks
+ */
+void I8080MemSetCallbacks(I8080MemRef mem, const I8080MemCallbacks *callbacks, const void *context);
 
 /**
  * Reset a system memory object

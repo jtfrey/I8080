@@ -29,6 +29,21 @@ typedef enum {
 } I8080LoggingLevel_t;
 
 /**
+ * Parse a logging level from a string
+ * Attempts to parse named log levels first, then falls back to trying
+ * a numeric level number.
+ *
+ * Valid level names are (case-insensitive):
+ *
+ *     debug, info, warn, warning, err, error, crit, critical
+ *
+ * @param in_str            the string to parse
+ * @param out_loglevel      set to the parsed \ref I8080LoggingLevel_t value
+ * @return                  boolean true if a value was successfully parsed
+ */
+bool I8080LoggingLevelParse(const char *in_str, I8080LoggingLevel_t *out_loglevel);
+
+/**
  * Logging format
  * The messages produced by the logging facility have a number of
  * fields that can be turned on and off.
@@ -66,6 +81,18 @@ I8080LoggingLevel_t I8080LoggingGetMaxLevel(void);
  * @param level         the new max level
  */
 void I8080LoggingSetMaxLevel(I8080LoggingLevel_t level);
+
+/**
+ * Increment the logging level
+ * @return              returns the new logging level
+ */
+I8080LoggingLevel_t I8080LoggingLevelIncrement(void);
+
+/**
+ * Decrement the logging level
+ * @return              returns the new logging level
+ */
+I8080LoggingLevel_t I8080LoggingLevelDecrement(void);
 
 /**
  * Get the logging format

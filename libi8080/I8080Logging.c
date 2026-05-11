@@ -43,6 +43,38 @@ I8080LoggingLevelNameForLevel(
 
 //
 
+bool
+I8080LoggingLevelParse(
+    const char          *in_str,
+    I8080LoggingLevel_t *out_loglevel
+)
+{
+    I8080LoggingLevelName_t     *level_names = I8080LoggingLevelNames;
+    long                        v;
+    char                        *endptr;
+    
+    while ( level_names->level_name ) {
+        int         name_len = strlen(level_names->level_name);
+        
+        while ( name_len ) {
+            if ( strncasecmp(in_str, level_names->level_name, name_len) == 0 ) {
+                *out_loglevel = level_names->level_num;
+                return true;
+            }
+            name_len--;
+        }
+        level_names++;
+    }
+    v = strtol(in_str, &endptr, 0);
+    if ( endptr > in_str ) {
+        *out_loglevel = v;
+        return true;
+    }
+    return false;
+}
+
+//
+
 static I8080LoggingLevel_t __loglevel = kI8080LoggingLevelError;
 
 I8080LoggingLevel_t
@@ -57,6 +89,44 @@ I8080LoggingSetMaxLevel(
 )
 {
     if ( level >= -1 ) __loglevel = level;
+}
+
+I8080LoggingLevel_t
+I8080LoggingLevelIncrement(void)
+{
+    bool        not_found = true;
+    
+    while ( not_found && __loglevel < kI8080LoggingLevelDebug ) {
+        switch ( ++__loglevel ) {
+            case kI8080LoggingLevelCritical:
+            case kI8080LoggingLevelError:
+            case kI8080LoggingLevelWarning:
+            case kI8080LoggingLevelInfo:
+            case kI8080LoggingLevelDebug:
+                not_found = false;
+                break;
+        }
+    }
+    return __loglevel;
+}
+
+I8080LoggingLevel_t
+I8080LoggingLevelDecrement(void)
+{
+    bool        not_found = true;
+    
+    while ( not_found && __loglevel > kI8080LoggingLevelCritical ) {
+        switch ( --__loglevel ) {
+            case kI8080LoggingLevelCritical:
+            case kI8080LoggingLevelError:
+            case kI8080LoggingLevelWarning:
+            case kI8080LoggingLevelInfo:
+            case kI8080LoggingLevelDebug:
+                not_found = false;
+                break;
+        }
+    }
+    return __loglevel;
 }
 
 //

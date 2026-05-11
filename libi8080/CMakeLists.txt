@@ -6,7 +6,11 @@ option(I8080_STRIP_DEBUGGING "Enable this option to eliminate DEBUG statements e
 
 option(I8080_LOGGING_USE_PRETTY_FUNCTION "Use the __PRETTY_FUNCTION__ macro if on, __func__ otherwise" ON)
 
+option(I8080_ENABLE_MMAP "Enable mmap() ROM mapping in I8080Memory" ON)
 
+#
+# Compiled feature checks
+#
 include(CheckCSourceCompiles)
 
 # Check for __builtin_parity
@@ -31,8 +35,9 @@ if(HAS_TERMIOS_OLCUC)
     message(STATUS "Found termios OLCUC")
 endif()
 
-# Check for mmap output flag in termios
-check_c_source_compiles("
+if(I8080_ENABLE_MMAP)
+    # Check for mmap output flag in termios
+    check_c_source_compiles("
 #include <sys/mman.h>
 int main() {
     void    *p = mmap((void*)0, 0, 0, 0, 0, 0);
@@ -40,10 +45,14 @@ int main() {
     munmap(p, 0);
     return 0;
 }
-" HAS_MMAP)
-if(HAS_MMAP)
-    message(STATUS "Found mmap/munmap")
-endif()
+    " HAS_MMAP)
+    if(HAS_MMAP)
+        message(STATUS "Found mmap/munmap")
+    endif()
+else()
+    unset(HAS_MMAP)
+    unset(HAS_MMAP CACHE)
+endif()    
 
 #
 # Generate our common header file and have all targets in this
@@ -54,6 +63,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 # Source files for the library:
 set(LIBI8080_SOURCES
+    I8080Config.c
     I8080Logging.c
     I8080Registers.c
     I8080Memory.c
