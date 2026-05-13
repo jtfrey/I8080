@@ -36,17 +36,36 @@ typedef enum {
     kI8080CGAPaletteIdMax
 } I8080CGAPaletteId_t;
 
+/**
+ * A 24bpp (8bpc) color
+ * Three 8-bit channels, R, G, B.
+ */
 typedef struct {
     uint8_t     r, g, b;
 } I8080CGAColor_t;
 
+/**
+ * A color palette
+ * A palette is an array of \ref I8080CGAColor_t records.  It is meant
+ * to be loaded into the curses environment and referenced by index.
+ * The color at index 0 is actually color 1 in the system -- color 0
+ * is reserved.  So a palette can have at most 254 color definitions.
+ */
 typedef struct {
-    uint8_t             n_colors;
-    I8080CGAColor_t     colors[];
+    uint8_t             n_colors;   /*!< the number of colors in the palette */
+    I8080CGAColor_t     colors[];   /*!< the array of color definitions */
 } I8080CGAPalette_t;
 
+/**
+ * Type of a pointer to a pre-defined palette
+ */
 typedef const I8080CGAPalette_t * I8080CGAPalettePtr;
 
+/**
+ * Pre-defined palettes
+ * Array of pointers to the pre-defined color palettes.  Individual
+ * palettes can be referenced by their index in \ref I8080CGAPaletteId_t.
+ */
 extern const I8080CGAPalettePtr I8080CGAPalettes[kI8080CGAPaletteIdMax];
 
 #endif /* __I8080CGACOLOR_H__ */

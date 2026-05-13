@@ -17,11 +17,13 @@
 
 /**
  * Initialize curses
+ * A basic curses library initialization routine.
  */
 void I8080CGAInit(void);
 
 /**
  * Shutdown curses
+ * A basic curses library shutdown routine.
  */
 void I8080CGAShutdown(void);
 
@@ -80,7 +82,7 @@ typedef enum __attribute__((packed)) {
 
 /**
  * CGA register index
- * The index of each of the registers.
+ * The index of each of the CGA display registers.
  */
 typedef enum {
     kI8080CGARegisterSupModes = 0,
@@ -144,16 +146,16 @@ typedef union {
  * callback.
  */
 typedef struct {
-    I8080Addr_t             base_addr;      /*!< where the CGA is mapped in memory */
-    I8080CGARegisters_t     rgstrs;         /*!< the CGA registers */
-    WINDOW                  *wndw;          /*!< the curses window for the display */
-    const void              *rch;           /*!< internal only -- this will be setup at instance
-                                                 creation */
-    const void              *wch;           /*!< internal only -- this will be setup at instance
-                                                 creation */
-    short                   saved_colors[4*254];  /*!< internal only -- this will be setup at
-                                                       instance creation; a 4 x n_color array of
-                                                       (1/0, R, G, B) values when colors are set */
+    I8080Addr_t             base_addr;              /*!< where the CGA is mapped in memory */
+    I8080CGARegisters_t     rgstrs;                 /*!< the CGA registers */
+    WINDOW                  *wndw;                  /*!< the curses window for the display */
+    const void              *rch;                   /*!< internal only -- this will be setup at
+                                                         instance creation */
+    const void              *wch;                   /*!< internal only -- this will be setup at
+                                                         instance creation */
+    short                   saved_colors[4*254];    /*!< internal only -- this will be setup at
+                                                         instance creation; a 4 x n_color array of
+                                                         (1/0, R, G, B) values when colors are set */
     //
     const I8080MemCallbacks *next_callbacks;
     const void              *next_context;
@@ -185,13 +187,71 @@ typedef I8080CGAContext_t * I8080CGAContextPtr;
  */
 I8080CGAContextPtr I8080CGAContextCreate(I8080Addr_t base_addr, I8080CGAMode_t mode, WINDOW *wndw);
 
+/**
+ * Retrieve a color's channel intensities
+ * The red, green, and blue 8-bit intensities of the curses color at
+ * index \p color is retrieved.
+ * @param cga               the CGA context
+ * @param color             the color index
+ * @param r                 pointer to the byte that will accept the red
+ *                          intensity
+ * @param g                 pointer to the byte that will accept the green
+ *                          intensity
+ * @param b                 pointer to the byte that will accept the blue
+ *                          intensity
+ */
 void I8080CGAContextGetColor(I8080CGAContextPtr cga, int color, uint8_t *r, uint8_t *g, uint8_t *b);
+
+/**
+ * Set a color's channel intensities
+ * The red, green, and blue 8-bit intensities of the curses color at
+ * index \p color is set.
+ * @param cga               the CGA context
+ * @param color             the color index
+ * @param r                 the 8-bit red intensity
+ * @param g                 the 8-bit green intensity
+ * @param b                 the 8-bit blue intensity
+ */
 void I8080CGAContextSetColor(I8080CGAContextPtr cga, int color, uint8_t r, uint8_t g, uint8_t b);
+
+/**
+ * Restore curses original color palette
+ * The saved original color intensities present in \p cga are restored.
+ * @param cga               the CGA context
+ */
 void I8080CGAContextRestoreColors(I8080CGAContextPtr cga);
 
+/**
+ * Set curses colors and pairs from a palette
+ * The color definitions present in \p palette are loaded into the curses
+ * runtime environment.  The zeroeth (first) color in the palette is assigned
+ * to curses color 1 and that color is assigned to pair 1.
+ * @param cga               the CGA context
+ * @param palette           pointer to the color palette
+ */
 void I8080CGAContextLoadColorPalette(I8080CGAContextPtr cga, I8080CGAPalettePtr palette);
 
+/**
+ * Read screen element at coordinate
+ * The screen element -- ASCII character or color index -- at coordinate
+ * (x, y) in the window associatd with \p cga is returned.
+ * @param cga               the CGA context
+ * @param x                 x-coordinate
+ * @param y                 y-coordinate
+ * @return                  the screen element
+ */
 uint8_t I8080CGAContextReadXY(I8080CGAContextPtr cga, int x, int y);
+
+/**
+ * Write screen element at coordinate
+ * The screen element -- an ASCII character or color index -- at
+ * coordinate (x, y) in the window associatd with \p cga is set to
+ * \p byte.
+ * @param cga               the CGA context
+ * @param x                 x-coordinate
+ * @param y                 y-coordinate
+ * @param byte              the screen element to set
+ */
 void I8080CGAContextWriteXY(I8080CGAContextPtr cga, int x, int y, uint8_t byte);
 
 /**
