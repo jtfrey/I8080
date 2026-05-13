@@ -199,7 +199,7 @@ I8080InstrDispatchDataMovementLXI(
         default:
             sys8080->rgstrs.RP[rp] = hi;
             sys8080->rgstrs.RP[rp] = (sys8080->rgstrs.RP[rp] << 8) | lo;
-            DEBUG("Loaded address $%04hX into %s", sys8080->rgstrs.SP, I8080InstrRegisterPairNames[rp]);
+            DEBUG("Loaded address $%04hX into %s", sys8080->rgstrs.RP[rp], I8080InstrRegisterPairNames[rp]);
             break;
     }
 

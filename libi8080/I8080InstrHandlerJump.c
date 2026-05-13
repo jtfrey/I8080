@@ -332,7 +332,7 @@ I8080InstrDispatchRestart(
     I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (sys8080->rgstrs.PC >> 8));
     I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (sys8080->rgstrs.PC & 0xFF));
     
-    sys8080->rgstrs.PC = slot << 4;
+    sys8080->rgstrs.PC = slot << 3;
     
     return 11;
 }

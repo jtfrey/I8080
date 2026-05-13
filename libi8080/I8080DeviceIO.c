@@ -302,22 +302,31 @@ I8080DevBusPrint(
     int             i = 0;
     
     while ( i < 256 ) {
+        I8080DevNode_t  *dev;
+        const char      *devname;
+        
         if ( devbus->input_devs[i].device_ptr && devbus->output_devs[i].device_ptr && 
              (devbus->input_devs[i].device_ptr == devbus->output_devs[i].device_ptr) )
         {
+            dev = &devbus->input_devs[i];
+            devname = ( dev->device_ptr->name ) ? dev->device_ptr->name(dev->device_ptr, dev->context) : dev->device_ptr->device_name;
             fprintf(stream, "I8080Device[%02X] [←%08lX|→%08lX] BYTES  \"%s\"\n",
-                        i, devbus->input_devs[i].device_ptr->input.bytes_in, devbus->output_devs[i].device_ptr->output.bytes_out,
-                        devbus->input_devs[i].device_ptr->device_name);
+                        i, dev->device_ptr->input.bytes_in, dev->device_ptr->output.bytes_out,
+                        devname);
         } else {
             if ( devbus->input_devs[i].device_ptr ) {
+                dev = &devbus->input_devs[i];
+                devname = ( dev->device_ptr->name ) ? dev->device_ptr->name(dev->device_ptr, dev->context) : dev->device_ptr->device_name;
                 fprintf(stream, "I8080Device[%02X] [←%08lX|         ] BYTES  \"%s\"\n",
-                        i, devbus->input_devs[i].device_ptr->input.bytes_in,
-                        devbus->input_devs[i].device_ptr->device_name);
+                        i, dev->device_ptr->input.bytes_in,
+                        devname);
             }
             if ( devbus->output_devs[i].device_ptr ) {
+                dev = &devbus->output_devs[i];
+                devname = ( dev->device_ptr->name ) ? dev->device_ptr->name(dev->device_ptr, dev->context) : dev->device_ptr->device_name;
                 fprintf(stream, "I8080Device[%02X] [         |→%08lX] BYTES  \"%s\"\n",
-                        i, devbus->output_devs[i].device_ptr->output.bytes_out,
-                        devbus->output_devs[i].device_ptr->device_name);
+                        i, dev->device_ptr->output.bytes_out,
+                        devname);
             }
         }
         i++;
@@ -502,7 +511,8 @@ I8080Device_t __I8080DeviceStdInput = {
             .input = {
                 .read = I8080DeviceStdInputRead },
             .reset = I8080DeviceStdInputReset,
-            .shutdown = I8080DeviceStdInputShutdown
+            .shutdown = I8080DeviceStdInputShutdown,
+            .name = NULL
         };
 const I8080DevicePtr I8080DeviceStdInput = &__I8080DeviceStdInput;
 
@@ -512,7 +522,8 @@ I8080Device_t __I8080DeviceStdOutput = {
             .output = {
                 .write = I8080DeviceStdOutputWrite },
             .reset = I8080DeviceStdOutputReset,
-            .shutdown = I8080DeviceStdOutputShutdown
+            .shutdown = I8080DeviceStdOutputShutdown,
+            .name = NULL
         };
 const I8080DevicePtr I8080DeviceStdOutput = &__I8080DeviceStdOutput;
 
@@ -520,7 +531,10 @@ I8080Device_t __I8080DeviceStdError = {
             .device_name = "stderr",
             .device_mode = kI8080DeviceModeOutput,
             .output = {
-                .write = I8080DeviceStdErrorWrite }
+                .write = I8080DeviceStdErrorWrite },
+            .reset = NULL,
+            .shutdown = NULL,
+            .name = NULL
         };
 const I8080DevicePtr I8080DeviceStdError = &__I8080DeviceStdError;
 
@@ -532,7 +546,8 @@ I8080Device_t __I8080DeviceTTY = {
             .output = {
                 .write = I8080DeviceStdOutputWrite },
             .reset = I8080DeviceTTYReset,
-            .shutdown = I8080DeviceTTYShutdown
+            .shutdown = I8080DeviceTTYShutdown,
+            .name = NULL
         };
 const I8080DevicePtr I8080DeviceTTY = &__I8080DeviceTTY;
 
@@ -651,6 +666,21 @@ I8080DeviceFileInOutWrite(
 
 //
 
+static
+const char*
+I8080DeviceFileInOutName(
+    I8080DevicePtr  dev,
+    const void      *context
+)
+{
+    I8080DeviceFileContext_t    *file_context = (I8080DeviceFileContext_t*)context;
+    
+    if ( file_context->variant == kI8080DeviceFileVariantPath ) return file_context->path.filepath;
+    return dev->device_name;
+}
+
+//
+
 I8080Device_t __I8080DeviceFileIn = {
             .device_name = "file-in",
             .device_mode = kI8080DeviceModeInput,
@@ -659,7 +689,8 @@ I8080Device_t __I8080DeviceFileIn = {
             .output = {
                 .write = NULL },
             .reset = I8080DeviceFileInOutReset,
-            .shutdown = I8080DeviceFileInOutShutdown
+            .shutdown = I8080DeviceFileInOutShutdown,
+            .name = I8080DeviceFileInOutName
         };
 const I8080DevicePtr I8080DeviceFileIn = &__I8080DeviceFileIn;
 
@@ -671,7 +702,8 @@ I8080Device_t __I8080DeviceFileOut = {
             .output = {
                 .write = I8080DeviceFileInOutWrite },
             .reset = I8080DeviceFileInOutReset,
-            .shutdown = I8080DeviceFileInOutShutdown
+            .shutdown = I8080DeviceFileInOutShutdown,
+            .name = I8080DeviceFileInOutName
         };
 const I8080DevicePtr I8080DeviceFileOut = &__I8080DeviceFileOut;
 
@@ -683,6 +715,7 @@ I8080Device_t __I8080DeviceFileInOut = {
             .output = {
                 .write = I8080DeviceFileInOutWrite },
             .reset = I8080DeviceFileInOutReset,
-            .shutdown = I8080DeviceFileInOutShutdown
+            .shutdown = I8080DeviceFileInOutShutdown,
+            .name = I8080DeviceFileInOutName
         };
 const I8080DevicePtr I8080DeviceFileInOut = &__I8080DeviceFileInOut;

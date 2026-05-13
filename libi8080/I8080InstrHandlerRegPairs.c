@@ -57,7 +57,7 @@ I8080InstrDispatchRegPairStack(
         switch ( pair ) {
             case kI8080InstrRegisterPairBC:
                 sys8080->rgstrs.C = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
-                sys8080->rgstrs.C = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
+                sys8080->rgstrs.B = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++);
                 DEBUG("Popped BC=0x%04hX from the stack at $%04hX",
                     sys8080->rgstrs.BC, sys8080->rgstrs.SP - 2);
                 break;
@@ -137,7 +137,7 @@ I8080InstrDispatchRegPairsArith(
             cycles = 10;
             break;
         }
-        case 0b00001010: {
+        case 0b00000010: {
             // INX
             uint16_t        result;
             
@@ -159,7 +159,7 @@ I8080InstrDispatchRegPairsArith(
             cycles = 5;
             break;
         }
-        case 0b00000010: {
+        case 0b00001010: {
             // DCX
             uint16_t        result;
             

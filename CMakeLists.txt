@@ -9,5 +9,11 @@ project(I8080
         C ASM)
 
 add_subdirectory(libi8080)
+
+option(I8080CGA_ENABLE "Enable build of the Curses Graphics Array library" ON)
+if ( ${I8080CGA_ENABLE} )
+add_subdirectory(libi8080CGA)
+endif ()
+
 add_subdirectory(demo)
 add_subdirectory(i8e8e)

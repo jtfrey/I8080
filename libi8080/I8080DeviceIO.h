@@ -79,6 +79,17 @@ typedef void (*I8080DeviceIOReset)(I8080DevicePtr dev, const void *context);
 typedef void (*I8080DeviceIOShutdown)(I8080DevicePtr dev, const void *context);
 
 /**
+ * Device non-default name
+ * Returns a pointer to a C string that identifies the device by
+ * name -- e.g. for a file open on disk, the file path might be
+ * returned.
+ * @param dev       pointer to the device definition
+ * @param context   the user-defined pointer associated with the device when it
+ *                  was registered on a bus.
+ */
+typedef const char* (*I8080DeviceIOName)(I8080DevicePtr dev, const void *context);
+
+/**
  * I/O device definition
  * Every device must have a data structure of this type to register
  * with a device bus.  The device bus will fill-in the \p device_id
@@ -110,6 +121,7 @@ typedef struct I8080Device {
     } output;
     I8080DeviceIOReset                  reset;          /*!< function that handles a device reset */
     I8080DeviceIOShutdown               shutdown;       /*!< function that handles device shutdown */
+    I8080DeviceIOName                   name;           /*!< function that returns a non-standard name */
 } I8080Device_t;
 
 /**
@@ -401,7 +413,7 @@ typedef enum {
  * original copy!
  */
 typedef struct {
-    I8080DeviceFileVariant_t    variant;        /*!< the I8080DeviceFile variant */ 
+    I8080DeviceFileVariant_t    variant;        /*!< the I8080DeviceFile variant */
     union {
         struct {
             const char          *filepath;      /*!< path to the file to be opened */

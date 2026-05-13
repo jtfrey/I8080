@@ -321,6 +321,7 @@ typedef struct {
     I8080Addr_t                 rom_addr;   /*!< address at which the ROM should be mapped */
     I8080Addr_t                 rom_size;   /*!< the number of bytes in the ROM image; zero implies the full 64 KiB */
     uint8_t                     *rom_image; /*!< pointer to the array of bytes that comprise the ROM image */
+    const char                  *rom_name;  /*!< optional external C string that acts as a name for the image */
     //
     const I8080MemCallbacks *next_callbacks;
     const void              *next_context;

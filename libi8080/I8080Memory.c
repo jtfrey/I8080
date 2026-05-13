@@ -473,8 +473,8 @@ I8080MemROMWithMappedFile(
                 mmap_len = length;
             }
             
-            segment = mmap(NULL, mmap_len, PROT_READ, MAP_FILE, fd, offset);
-            if ( segment ) {
+            segment = mmap(NULL, mmap_len, PROT_READ, MAP_PRIVATE | MAP_FILE, fd, offset);
+            if ( segment != MAP_FAILED ) {
                 new_ROM = (I8080MemROMContext_t*)calloc(1, sizeof(I8080MemROMContext_t));
                 if ( new_ROM ) {
                     new_ROM->options |= kI8080MemROMOptsNeedMunmap;

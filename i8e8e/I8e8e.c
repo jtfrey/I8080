@@ -481,12 +481,14 @@ main(
                     ERROR("Unable to allocate ROM context (errno=%d)", errno);
                     exit(errno);
                 }
+                this_mem_obj->context.rom->rom_name = this_mem_obj->filepath;
                 this_mem_obj->context.rom->next_callbacks = last_callbacks;
                 this_mem_obj->context.rom->next_context = last_context;
                 last_callbacks = &this_mem_obj->callbacks;
                 last_context = this_mem_obj->context.rom;
-                INFO("Created new ROM image @ $%04hX - $%04hX", this_mem_obj->context.rom->rom_addr,
-                    this_mem_obj->context.rom->rom_addr + this_mem_obj->context.rom->rom_size - 1);
+                INFO("Created new %s ROM image @ $%04hX - $%04hX", 
+                    (rom_mapmode == kI8e8eROMMappingModeAlloc) ? "allocated buffer" : "memory-mapped",
+                    this_mem_obj->context.rom->rom_addr, this_mem_obj->context.rom->rom_addr + this_mem_obj->context.rom->rom_size - 1);
                 break;
             }
             case kI8e8eMemObjTypeUnmapped: {
