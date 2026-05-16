@@ -310,21 +310,21 @@ I8080DevBusPrint(
         {
             dev = &devbus->input_devs[i];
             devname = ( dev->device_ptr->name ) ? dev->device_ptr->name(dev->device_ptr, dev->context) : dev->device_ptr->device_name;
-            fprintf(stream, "I8080Device[%02X] [←%08lX|→%08lX] BYTES  \"%s\"\n",
+            fprintf(stream, "I8080Device[$%02X] [←0x%08lX|0x%08lX→] BYTES  \"%s\"\n",
                         i, dev->device_ptr->input.bytes_in, dev->device_ptr->output.bytes_out,
                         devname);
         } else {
             if ( devbus->input_devs[i].device_ptr ) {
                 dev = &devbus->input_devs[i];
                 devname = ( dev->device_ptr->name ) ? dev->device_ptr->name(dev->device_ptr, dev->context) : dev->device_ptr->device_name;
-                fprintf(stream, "I8080Device[%02X] [←%08lX|         ] BYTES  \"%s\"\n",
+                fprintf(stream, "I8080Device[$%02X] [←0x%08lX|           ] BYTES  \"%s\"\n",
                         i, dev->device_ptr->input.bytes_in,
                         devname);
             }
             if ( devbus->output_devs[i].device_ptr ) {
                 dev = &devbus->output_devs[i];
                 devname = ( dev->device_ptr->name ) ? dev->device_ptr->name(dev->device_ptr, dev->context) : dev->device_ptr->device_name;
-                fprintf(stream, "I8080Device[%02X] [         |→%08lX] BYTES  \"%s\"\n",
+                fprintf(stream, "I8080Device[$%02X] [           |0x%08lX→] BYTES  \"%s\"\n",
                         i, dev->device_ptr->output.bytes_out,
                         devname);
             }

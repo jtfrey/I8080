@@ -190,76 +190,232 @@ The system will continue processing instructions until:
 
 In both cases, the system will transtion out of the "running" state and back to the "on" state.
 
-## The demo program
+## The example programs
 
-The demo program has the following 8080 assembly program contained within it:
+There are a number of example 8080 programs included in the project.  They make use of the `i8e8e` CLI emulator.
 
-```
-                                ORG     $1000
-                                    
-1000:		0x3E  0x2C          MVI     A  #$2C     ; A <= $2C
-1002:		0x27                DAA                 ; adjust to BCD form -> $32
-1003:		0xCE  0x78          ACI     #$78        ; A <= A + $78
-1005:		0x27                DAA                 ; adjust to BDC form -> $110 = $10
-1006:		0xFE  0x10          CPI     #$10        ; did we get the right result?
-1008:		0xCA  0x0C  0x10    JZ      +1          ; hooray, keep going with this program
-100B:		0x76                HLT                 ; failure, halt now
+### Random number generator
 
-100C:		0x26  0x01          MVI     H  #$01     ; H <= $01
-100E:		0x2E  0xFF          MVI     L  #$FF     ; L <= $FF
-1010:		0xF9                SPHL                ; SP <= HL=$01FF
-1011:		0xC5                PUSH    BC          ; push registers to the stack
-1012:		0xD5                PUSH    DE
-1013:		0xE5                PUSH    HL
-1014:		0xF5                PUSH    PSW
-
-LOOP:
-1015:		0xDB  0x00          IN      #0          ; Read from stdin
-1017:		0xFE  0xFF          CPI     #$FF        ; EOF?
-1019:		0xCA  0x33  0x10    JZ      DONE        ; Yep  exit the program
-101C:		0xFE  0x04          CPI     #$04        ; Ctrl-D?
-101E:		0xCA  0x33  0x10    JZ      DONE        ; Yep  exit the program
-1021:		0xFE  0x61          CPI     #$61        ; Character == 0x61 ('a')
-1023:		0xFA  0x2E  0x10    JM      OUTPUT      ; Character < 0x61
-1026:		0xFE  0x7B          CPI     #$7B        ; Character == 0x7B ('z' + 1)
-1028:		0xF2  0x2E  0x10    JP      OUTPUT      ; Character >= 0x7B
-102B:		0xCD  0x38  0x10    CALL    UC          ; Call uppercase subroutine
-
-OUTPUT:
-102E:		0xD3  0x0A          OUT     #10         ; Write the char to stderr
-1030:		0xC3  0x15  0x10    JMP     LOOP        ; Go back for another
-
-DONE:
-1033:		0xF1                POP      PSW        ; pop registers off the stack
-1034:		0xE1                POP      HL
-1035:		0xD1                POP      DE
-1036:		0xC1                POP      BC
-1037:		0x76                HLT                 ; Terminate the program
-
-UC:
-1038:		0xEE  0x20          XRI     #$20        ; Convert to uppercase...
-103A:		0xC9                RET
-```
-
-This program expects the `I8080DeviceTTY` to be configured as device 0 and the `I8080DeviceStdError` as output device 10.  It tests a few things and then enters into a loop, reading characters from stdin one at a time, converting any lowercase letters to uppercase and echoing to stderr.  When end-of-file or Ctrl-D are read, the program exits.
+The [rng.asm](example/rng/rng.asm) example exploits the `i8e8e` emulator's ability to attach arbitrary files to an i/o channel.  The `/dev/urandom` file on Unix-like systems is an OS-provided random number generator.  Connecting that file to input channel 10, an 8080 program can fill the accumultor with a random byte quite easily:
 
 ```
-THIS IS A TEST.
-
-01234567788979  --____+++++====
-
-
-^D
- ________________________________________________________________________________________
-| [B]=[0x00|0  |0   ] [C]=[0x00|0  |0   ]   [BC]=[0x0000|0    |0     ]         A       C |
-| [D]=[0x00|0  |0   ] [E]=[0x00|0  |0   ]   [DE]=[0x0000|0    |0     ]   S Z - C - P - Y |
-| [H]=[0x01|1  |1   ] [L]=[0xFF|255|-1  ]   [HL]=[0x01FF|511  |511   ]   =============== |
-| [F]=[0x81|129|-127] [A]=[0x0A|10 |10  ]  [PSW]=[0x810A|33034|-32502]   1 0 0 0 0 0 1 1 |
-|                                           [PC]=[0x1038|4152 |4152  ]                   |
-| [CYCLS]=[0x000000001F12][      3977 µs]   [SP]=[0x01FF|511  |511   ]           [*]INTE |
-|________________________________________________________________________________________|
-I8080Device[00] [←00000033|→00000000] BYTES  "tty"
-I8080Device[0A] [         |→00000032] BYTES  "stderr"
+    org     0400h
+    
+    mvi     h, '1'
+    mvi     l, '0'
+    in      10          ; A <- byte read from input 10
+    mov     d, a
+    in      10          ; A <- byte read from input 10
+    mov     e, a
+    dad     de
+    hlt
 ```
 
-When the input is terminated, a final summary of the registers and devices is written to the screen.  The total number of CPU cycles (and required CPU time) are present, as well as the total bytes that moved through each i/o device.
+The HL register pair is loaded with two ASCII characters, the DE pair is loaded with two random bytes.  DE is added to HL and the program halts with the resulting sum in HL.  To get `/dev/urandom` present as input channel 10:
+
+```
+i8e8e -L rng.bin@0x400 -f /dev/urandom:i#10 -P 0x400
+```
+
+The `i` indicates input-only, and `10` is the channel number (see `i8e8e --help` for more info).  Assembling and running the program:
+
+```
+ ____________________________________________________________________________________________
+| [B]=[0x00|0  |0   | ] [C]=[0x00|0  |0   | ]   [BC]=[0x0000|0    |0     ]         A       C |
+| [D]=[0xA2|162|-94 | ] [E]=[0x95|149|-107| ]   [DE]=[0xA295|41621|-23915]   S Z - C - P - Y |
+| [H]=[0xD3|211|-45 | ] [L]=[0xC5|197|-59 | ]   [HL]=[0xD3C5|54213|-11323]   =============== |
+| [F]=[0x00|0  |0   | ] [A]=[0x95|149|-107| ]  [PSW]=[0x0095|149  |149   ]   0 0 0 0 0 0 1 0 |
+|                                               [PC]=[0x040C|1036 |1036  ]                   |
+| [CYCLS]=[0x00000000003D][        30 µs]       [SP]=[0x0000|0    |0     ]           [*]INTE |
+|____________________________________________________________________________________________|
+I8080Device[$00] [←0x00000000|0x00000000→] BYTES  "tty"
+I8080Device[$0A] [←0x00000002|           ] BYTES  "/dev/urandom"
+I8080Device[$FF] [           |0x00000000→] BYTES  "stderr"
+I8080Mem[$0000..$03FF] : unused
+I8080Mem[$0400..$04FF] : allocated RAM
+I8080Mem[$0500..$FFFF] : unused
+```
+
+The `IODevice` summary lines show input channels on the left, output on the right.  Excellent — two bytes were read from `/dev/urandom` which was on channel 10 (`$0A`).  Hopefully if the program is run multiple times different (randomized) results will be produced:
+
+```
+$ for dummy in `seq 0 10`; do make run; done | grep HL
+| [H]=[0xDE|222|-34 | ] [L]=[0x2B|43 |43  |+]   [HL]=[0xDE2B|56875|-8661 ]   =============== |
+| [H]=[0x3A|58 |58  |:] [L]=[0x56|86 |86  |V]   [HL]=[0x3A56|14934|14934 ]   =============== |
+| [H]=[0x13|19 |19  | ] [L]=[0xE1|225|-31 | ]   [HL]=[0x13E1|5089 |5089  ]   =============== |
+| [H]=[0xC5|197|-59 | ] [L]=[0x2C|44 |44  |,]   [HL]=[0xC52C|50476|-15060]   =============== |
+| [H]=[0x4C|76 |76  |L] [L]=[0x32|50 |50  |2]   [HL]=[0x4C32|19506|19506 ]   =============== |
+| [H]=[0xAD|173|-83 | ] [L]=[0x08|8  |8   | ]   [HL]=[0xAD08|44296|-21240]   =============== |
+| [H]=[0x22|34 |34  |"] [L]=[0x83|131|-125| ]   [HL]=[0x2283|8835 |8835  ]   =============== |
+| [H]=[0x22|34 |34  |"] [L]=[0x79|121|121 |y]   [HL]=[0x2279|8825 |8825  ]   =============== |
+| [H]=[0xEA|234|-22 | ] [L]=[0xC6|198|-58 | ]   [HL]=[0xEAC6|60102|-5434 ]   =============== |
+| [H]=[0x55|85 |85  |U] [L]=[0xC6|198|-58 | ]   [HL]=[0x55C6|21958|21958 ]   =============== |
+| [H]=[0x2D|45 |45  |-] [L]=[0xF4|244|-12 | ]   [HL]=[0x2DF4|11764|11764 ]   =============== |
+```
+
+Hooray — our emulator has a good-quality RNG and no 8080 programming was necessary!
+
+### Multiplication
+
+Like many early CPUs the 8080 ISA does not include integer multiplication or division instructions.  The [multiply.asm](examples/multiply/multiply.asm) program contains three algorithms for multiplication of two 8-bit values.  The first is a naive repeated addition approach:
+
+```
+;
+;  If E = (1 + 1 + … + 1), then
+;  D * E = D * (1 + 1 + … + 1)
+;        = D + D + … + D
+;
+; The 8-bit multiplier and multiplicand are in
+; registers D and E.  On exit, the pair DE
+; has the (possibly) 16-bit product.
+;
+mltalg1:        push        bc          ; we'll clobber BC and HL
+                push        hl
+                mvi         h, 0h       ; HL <- 0000h
+                mvi         l, 0h
+                mov         b, d        ; use B as our loop counter
+                                        ; holding D...
+                mvi         d, 0h       ; ..and zero-out the MSB of
+                                        ; DE
+                inr         b           ; we can only catch multiply
+                                        ; by zero if we force a test
+mltalg1_1:      dcr         b           ; of B == 0 by incrementing
+                                        ; then decrementing
+                jz          mltalg1_2   ; B == 0, all done
+                dad         de          ; HL += DE
+                jmp         mltalg1_1   ; next iteration
+mltalg1_2:      xchg                    ; DE <=> HL
+                pop         hl          ; restore clobbered registers
+                pop         bc          ; and return with the product
+                ret                     ; in DE
+```
+
+Register D will _always_ be the multiplier, so even if E < D the loop will be performed D times.  Even worse, if E is `$00` and D is `$FF` the code will loop 255 times.  The cycle count output that `asm8080` produces shows that the body of the loop comprises 35 clock cycles.
+
+The second subroutine uses bit shifts to effect a sum of factors-of-two times the multiplicand:
+
+```
+;
+;  D * E = D * Sum(i=0…7, E_i * 2^i)
+;        = Sum(i=0…7, E_i * D * 2^i)
+;        = Sum(i=0…7, E_i * (D << i))
+; Since E_i will be 0/1, the multiplication
+; is a sum of shifted copies of the multiplier.
+;
+; The 8-bit multiplier and multiplicand are in
+; registers D and E.  On exit, the pair DE
+; has the (possibly) 16-bit product.
+;
+mltalg2:        push        psw         ; we'll clobber all registers
+                push        bc
+                push        hl
+                mvi         h, 0h       ; HL <- 0000h
+                mvi         l, 0h
+                mvi         b, 0h       ; load the multiplicand, E, into BC
+                mov         c, e
+                mov         a, d        ; move the multiplier, D, to A
+                mvi         d, 8        ; now use D as our loop counter
+mltalg2_1:      rar                     ; A >> 1 -> carry
+                jnc         mltalg2_2   ; do not add this factor
+                dad         bc          ; HL += BC
+mltalg2_2:      push        psw         ; save A
+                xra         a           ; clear carry
+                mov         a, c
+                ral                     ; carry <- c << 1
+                mov         c, a
+                mov         a, b
+                ral                     ; b << 1 <- carry
+                mov         b, a        ; thus, BC = BC * 2
+                pop         psw         ; restore A (the shifted multiplier)
+                dcr         d           ; decrement counter and
+                jp          mltalg2_1   ; go do another round
+                xchg                    ; DE <=> HL
+                pop         hl          ; restore clobbered registers
+                pop         bc          ; and return with the product
+                pop         psw         ; in DE
+                ret
+```
+
+The repeated addition algorithm requires N iterations, where N is the value of the multiplier; by comparison, the second algorithm takes a constant 8 iterations.  So for circa 3.125% of the possible multipliers the second algorithm may be slower.  This algorithm also does not catch any special case like with D or E is `$00`.  The cycle count from `asm8080` shows that the body of the loop comprises 82/92 clock cycles — circa 2 times that of the repeated addition loop.
+
+Let's start with the worst case:  0xFF times 0xFF.  Repeated addition (`mltalg1`):
+
+```
+ ____________________________________________________________________________________________
+| [B]=[0x00|0  |0   | ] [C]=[0x00|0  |0   | ]   [BC]=[0x0000|0    |0     ]         A       C |
+| [D]=[0xFE|254|-2  | ] [E]=[0x01|1  |1   | ]   [DE]=[0xFE01|65025|-511  ]   S Z - C - P - Y |
+| [H]=[0x00|0  |0   | ] [L]=[0x00|0  |0   | ]   [HL]=[0x0000|0    |0     ]   =============== |
+| [F]=[0x40|64 |64  |@] [A]=[0x00|0  |0   | ]  [PSW]=[0x4000|16384|16384 ]   0 1 0 0 0 0 1 0 |
+|                                               [PC]=[0x0408|1032 |1032  ]                   |
+| [CYCLS]=[0x000000002369][      4532 µs]       [SP]=[0x0000|0    |0     ]           [*]INTE |
+|____________________________________________________________________________________________|
+```
+
+versus the factors-of-two algorithm (`mltalg2`):
+
+```
+ ____________________________________________________________________________________________
+| [B]=[0x00|0  |0   | ] [C]=[0x00|0  |0   | ]   [BC]=[0x0000|0    |0     ]         A       C |
+| [D]=[0xFE|254|-2  | ] [E]=[0x01|1  |1   | ]   [DE]=[0xFE01|65025|-511  ]   S Z - C - P - Y |
+| [H]=[0x00|0  |0   | ] [L]=[0x00|0  |0   | ]   [HL]=[0x0000|0    |0     ]   =============== |
+| [F]=[0x00|0  |0   | ] [A]=[0x00|0  |0   | ]  [PSW]=[0x0000|0    |0     ]   0 0 0 0 0 0 1 0 |
+|                                               [PC]=[0x0408|1032 |1032  ]                   |
+| [CYCLS]=[0x0000000003CB][       486 µs]       [SP]=[0x0000|0    |0     ]           [*]INTE |
+|____________________________________________________________________________________________|
+```
+
+As expected:  255 * 35 cycles = 8925, versus 8 * [82…92] = [656…736].  If we zero-out bit 7 of both factors (0x7F * 0x7F) the repeated addition algorithm predictably improves by around a factor of two:
+
+```
+| [CYCLS]=[0x0000000011E9][      2292 µs]       [SP]=[0x0000|0    |0     ]           [*]INTE |
+```
+
+We observe a minimal time-savings of 10 cycles in the second algorithm (thanks to a skipped sum):
+
+```
+| [CYCLS]=[0x0000000003C1][       480 µs]       [SP]=[0x0000|0    |0     ]           [*]INTE |
+```
+
+The best possible performance for repeated addition is a multiplier of zero.  When that's the case, the timings are 332 µs versus 466 µs.  The loop in `mltalg1` consists of fewer cycles than the `mltalg2` loop, so for lower multiplier values it will be more optimal.  This suggests a combined algorithm (`mltalg3`) that:
+
+- selects the smallest of the pair to be the multiplier,
+- and opts for repeated addition when the chosen multiplier is below some threshold.
+
+The [benchmark.sh](examples/multiply/benchmark.sh) script automates the test of every combination of multiplicand and multiplier:  the results for a multiplier threshold of 16, for example:
+
+```
+$ ./benchmark.sh 16 > benchmark-16.log
+$ cat benchmark-16.log | awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+971.583 cyc, 485.786 µs
+```
+
+Producing an entire series of averages:
+
+```
+$ cat benchmark-19.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+968.355 cyc, 484.164 µs
+$ cat benchmark-20.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+965.073 cyc, 482.535 µs
+$ cat benchmark-21.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+964.99 cyc, 482.491 µs
+$ cat benchmark-22.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+967.815 cyc, 483.908 µs
+$ cat benchmark-23.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+967.676 cyc, 483.852 µs
+$ cat benchmark-24.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+969.779 cyc, 484.889 µs
+$ cat benchmark-25.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+971.298 cyc, 485.634 µs
+$ cat benchmark-26.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+968.869 cyc, 484.424 µs
+$ cat benchmark-27.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+967.885 cyc, 483.934 µs
+$ cat benchmark-28.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+970.521 cyc, 485.249 µs
+$ cat benchmark-32.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs\n",cyc/n,s/n);}'
+977.598 cyc, 488.796 µs
+```
+
+With the data [graphed](examples/multiply/multiply-threshold.png), a threshold of 21 appears to have the best overall performance.
+
+

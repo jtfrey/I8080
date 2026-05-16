@@ -247,9 +247,6 @@ I8080SystemStep(
     if ( I8080SystemIsReady(sys8080->state) ) {
         I8080Instr_t    instr;
         I8080CycleCount elapsed = 0;
-#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
-        bool            reenable_inte = false;
-#endif
         
         if ( ! I8080SystemIsRunning(sys8080->state) ) {
             sys8080->state |= kI8080SystemStateRunning;
@@ -262,12 +259,13 @@ I8080SystemStep(
         
         if ( sys8080->interrupt.is_raised ) {
             instr = sys8080->interrupt.opcode;
-            reenable_inte = true;
             DEBUG("Interrupt instruction: 0x%02hhX", instr);
         } else {
             instr = I8080InstrFetch(sys8080);
             DEBUG("Fetched instruction: 0x%02hhX", instr);
         }
+        
+        pthread_mutex_unlock(&sys8080->interrupt.lock);
 #else
         instr = I8080InstrFetch(sys8080);
         DEBUG("Fetched instruction: 0x%02hhX", instr);
@@ -294,14 +292,6 @@ I8080SystemStep(
             ERROR("An illegal instruction (0x%02hhX) was encountered", instr);
         }
         if ( cycles ) *cycles = elapsed;
-#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
-        if ( reenable_inte ) {
-            sys8080->rgstrs.INTE = 1;
-            sys8080->interrupt.opcode = 0x00;
-            sys8080->interrupt.is_raised = false;
-        }
-        pthread_mutex_unlock(&sys8080->interrupt.lock);
-#endif
     }
     return ok;
 }

@@ -7,5 +7,5 @@ clean::
 	$(RM) $(OBJECTS)
 
 %.bin: %.asm
-	asm8080 $^
+	asm8080 $<
 
