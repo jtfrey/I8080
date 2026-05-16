@@ -150,7 +150,7 @@ Rather than create 250+ separate functions for each unique opcode, functions tha
 
 Each class of instruction gets its own `I8080InstrHandler_t` record, and the records can be linked together to form a dispatch chain.  In theory, this linked list could be used to match opcodes to handlers as a program is executed.
 
-Then again, there are only 244 opcodes in the 8080 ISA, and an array of that many pointers is just under 2 KiB.  A linked list of `I8080InstrHandler_t` records can be _compiled_ into a `I8080InstrTable_t` that associates an array index with a dispatch function point.  At runtime, rather than walking the linked list to match an opcode to a function, the opcode is used as an index into the table:  much faster.  Another important benefit of compiling the `I8080InstrHandler_t` linked list is that collisions can be detected:  if two `I8080InstrHandler_t` records respond to the same opcode, that will be detected.
+Then again, there are only 244 opcodes in the 8080 ISA, and an array of that many pointers is just under 2 KiB.  A linked list of `I8080InstrHandler_t` records can be _compiled_ into a `I8080InstrTable_t` that associates an array index with a dispatch function pointer.  At runtime, rather than walking the linked list to match an opcode to a function, the opcode is used as an index into the table:  much faster.  Another important benefit of compiling the `I8080InstrHandler_t` linked list is that collisions can be detected:  if two `I8080InstrHandler_t` records respond to the same opcode, that will be detected.
 
 ### The basic 8080 system
 
