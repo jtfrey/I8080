@@ -13,9 +13,27 @@
 #include "I8080Logging.h"
 #include "I8e8eMemObj.h"
 #include "I8e8eFileDeviceObj.h"
+#include "I8080CGA.h"
+#include "I8080Timer.h"
 #include <fcntl.h>
 #include <signal.h>
 #include <getopt.h>
+
+
+#ifndef I8E8E_CGA_HARD_PAGELIMIT
+#   define I8E8E_CGA_HARD_PAGELIMIT 0x40
+#endif
+#ifndef I8E8E_CGA_SOFT_PAGELIMIT
+#   define I8E8E_CGA_SOFT_PAGELIMIT 0x20
+#endif
+#if I8E8E_CGA_SOFT_PAGELIMIT > I8E8E_CGA_HARD_PAGELIMIT
+#   undef I8E8E_CGA_HARD_PAGELIMIT
+#   undef I8E8E_CGA_SOFT_PAGELIMIT
+#   error I8E8E_CGA_SOFT_PAGELIMIT exceeds I8E8E_CGA_HARD_PAGELIMIT
+#endif
+const I8080Addr_t I8e8eCGAHardPageLimit = I8E8E_CGA_HARD_PAGELIMIT;
+const I8080Addr_t I8e8eCGASoftPageLimit = I8E8E_CGA_SOFT_PAGELIMIT;
+
 
 enum {
     kI8e8eOptAlternatePC        = 0x1000,
@@ -39,6 +57,9 @@ static struct option i8e8e_options[] = {
         { "SP",             required_argument,  0,  kI8e8eOptAlternateSP },
         { "file-device",    required_argument,  0,  'f' },
         { "tty",            required_argument,  0,  't' },
+        { "timers",         required_argument,  0,  'T' },
+        { "cga",            required_argument,  0,  'c' },
+        { "list-palettes",  no_argument,        0,  'p' },
         { NULL,             0,                  0,   0  }
     };
 
@@ -47,7 +68,7 @@ static const char *i8e8e_options_str =
 #ifdef HAS_MMAP
         "m:"
 #endif
-        "U:P:S:f:t:";
+        "U:P:S:f:t:T:c:p";
 
 void
 usage(
@@ -81,6 +102,8 @@ usage(
             "    -f/--file-device <file-dev>    connect a file to the device bus of the\n"
             "                                   emulator\n"
             "    -t/--tty <tty-options>         configure TTY options\n"
+            "    -T/--timers <timers-options>   configure realtime timers\n"
+            "    -c/--cga <cga-options>         configure a Curses Graphics Adapter\n"
             "\n"
             "    <addr> = ( $XXXX | 0xXXXX | 0N… | N… )\n\n"
             "        The emulator features a 64 KiB address space.  Addresses can be\n"
@@ -90,13 +113,14 @@ usage(
             "    <offset>, <len>, <byte> = { $X… | 0xX… | 0N… | N… }\n\n"
             "        An <offset>, <len>, or <byte> are a hexadecimal, octal, or decimal value\n"
             "\n"
-            "    <bytes-in> = <filepath>{:<offset>}{#<len>}@<addr>\n\n"
+            "    <bytes-in> = <filepath>{:<offset>}{#<len>}@<addr>{-<addr2>}\n\n"
             "        Bytes are read from <filepath> starting at <offset> (or the\n"
             "        beginnining of the file if <offset> is not provided) and inserted\n"
             "        into the system memory of the emulator starting at <addr>.  Up to\n"
             "        <len> bytes are inserted (or the full length of the file after\n"
             "        <offset> if <len> is omitted) with the operation wrapping back around\n"
-            "        the address space as necessary.\n"
+            "        the address space as necessary.  The optional <addr2> provides an end\n"
+            "        address that may be longer/shorter than the length read from the file.\n"
             "\n"
 #ifdef HAS_MMAP
             "    <rom-mode> = ( alloc | mmap )\n\n"
@@ -105,10 +129,10 @@ usage(
             "        the byte range indirectly via mmap()\n"
             "\n"
 #endif
-            "    <unmapped-seg> = <addr>-<addr>:<byte>\n\n"
+            "    <unmapped-seg> = <addr>-<addr2>:<byte>\n\n"
             "        An unmapped segment is created for which <byte> will be returned on\n"
             "        read and writes will be ignored.  The address range starts at the first\n"
-            "        <addr> and goes through the second <addr>, inclusive\n"
+            "        <addr> and goes through and including <addr2>\n"
             "\n"
             "    <file-dev> = <filepath>:<i|o|io>{#<dev-id>}{@<mode>}\n\n"
             "        A file at the given <filepath> is connected to the device bus of\n"
@@ -132,6 +156,22 @@ usage(
             "            i-all              all input options enabled\n"
             "            all                all input and output options enabled\n"
             "\n"
+            "    <timers-options> = <addr>\n"
+            "        Create a realtime timer device that will be mapped at memory location\n"
+            "        <addr>.  The first 16-bytes of the adapter are read-only date and time\n"
+            "        registers.  The remaining registers are used to configure and manage\n"
+            "        timers that generate an interrupt on expiration.\n"
+            "\n"
+            "    <cga-options> = <text|bw|color>@<addr>{#<w>x<h>{/<x>,<y>}}{:<palette-id>}\n"
+            "        Create a Curses Graphics Adapter that will be mapped at memory location\n"
+            "        <addr>.  The first 16-bytes of the adapter function as 8-bit registers\n"
+            "        for user code to interact with the device (see the programming manual\n"
+            "        for more information).  The initial mode is mandatory.  The palette\n"
+            "        defaults to a 16-color, 4-level RGB palette from https://lospec.com/.\n"
+            "        By default the full curses screen will be used; this can be overridden\n"
+            "        by providing a <w> and <h> (width and height) and optionally the origin\n"
+            "        of the resulting window, (<x>, <y>).\n"
+            "\n"
             "  environment variables:\n\n"
             "    I8E8E_VERBOSITY        the initial logging level; any abbreviation of\n\n"
             "                             critical, error, warning, info, debug\n\n"
@@ -143,6 +183,115 @@ usage(
             exe,
             I8080VersionString
         );
+}
+
+//
+
+typedef struct {
+    I8080Addr_t                 base_addr;
+    I8080CGAMode_t              mode;
+    I8080CGAPaletteId_t         palette_id;
+    bool                        has_dims;
+    bool                        has_coords;
+    int                         h, w, y, x;
+    I8080CGAMapperContextPtr    context;
+} I8e8eCGA_t;
+
+bool
+I8e8eCGAParse(
+    const char      *in_str,
+    I8e8eCGA_t      *out_cga
+)
+{
+    const char      *in_str_orig = in_str;
+    const char      *s_end;
+    
+    out_cga->h = out_cga->w = out_cga->x = out_cga->y = 0;
+    
+    // Skip ahead to the '@' delimiter:
+    s_end = in_str;
+    while ( *s_end && (*s_end != '@') ) s_end++;
+    if ( *s_end != '@' ) {
+        ERROR("Invalid CGA specification: %s", in_str_orig);
+        return false;
+    }
+    
+    // What mode?
+    if ( strncasecmp(in_str, "text", (s_end - in_str)) == 0 ) {
+        out_cga->mode = kI8080CGAModeText;
+    }
+    else if ( strncasecmp(in_str, "bw", (s_end - in_str)) == 0 ) {
+        out_cga->mode = kI8080CGAModeBWGraphics;
+    }
+    else if ( strncasecmp(in_str, "color", (s_end - in_str)) == 0 ) {
+        out_cga->mode = kI8080CGAModeClrGraphics;
+    }
+    else {
+        ERROR("Invalid CGA mode: %s", in_str_orig);
+        return false;
+    }
+    in_str = s_end;
+    
+    // Find end of address string:
+     ++in_str;
+    if ( ! I8080AddrParse(in_str, &out_cga->base_addr, &s_end) ) {
+        ERROR("Invalid CGA mapping address: %s", in_str_orig);
+        return false;
+    }
+    
+    // The next character must be a NUL or in the options set "#/:"
+    out_cga->palette_id = kI8080CGAPaletteIdDefault;
+    while ( *s_end && strchr("#/:", *s_end) ) {
+        switch ( *s_end ) {
+            case ':': {
+                // Parse the palette id:
+                if ( ! I8080CGAPaletteIdParse(++s_end, &out_cga->palette_id, &s_end) ) {
+                    ERROR("Invalid CGA palette id: %s", in_str_orig);
+                    ERROR("                        %*s^", (s_end - in_str_orig), "");
+                    return false;
+                }
+                break;
+            }
+            case '#': {
+                int     nchars;
+                
+                if ( sscanf(++s_end, "%dx%d%n", &out_cga->w, &out_cga->h, &nchars) != 2 ) {
+                    ERROR("Invalid CGA mapping: %s", in_str_orig);
+                    ERROR("                     %*s^", (s_end - in_str_orig), "");
+                    return false;
+                }
+                else if ( out_cga->h < 2 ) {
+                    ERROR("Invalid CGA mapping, height is < 2: %s", in_str_orig);
+                    return false;
+                }
+                else if ( out_cga->w < 2 ) {
+                    ERROR("Invalid CGA mapping, width is < 2: %s", in_str_orig);
+                    return false;
+                }
+                out_cga->has_dims = true;
+                s_end += nchars;
+                break;
+            }
+            case '/': {
+                int     nchars;
+                
+                if ( sscanf(++s_end, "%d,%d%n", &out_cga->x, &out_cga->y, &nchars) != 2 ) {
+                    ERROR("Invalid CGA mapping: %s", in_str_orig);
+                    ERROR("                     %*s^", (s_end - in_str_orig));
+                    return false;
+                }
+                out_cga->has_coords = true;
+                s_end += nchars;
+                break;
+            }
+        }
+    }
+    if ( *s_end ) {
+        ERROR("Invalid CGA mapping: %s", in_str_orig);
+        ERROR("                     %*s^", (s_end - in_str_orig), "");
+        return false;
+    }
+    return true;
 }
 
 //
@@ -243,7 +392,7 @@ I8080DeviceTTYOptsParse(
 volatile I8080SystemPtr sys8080 = NULL;
 
 void handle_sigint(int sig) {
-    I8080SystemInterrupt(sys8080);
+    I8080SystemBreak(sys8080);
 }
 
 //
@@ -259,9 +408,13 @@ main(
     I8080DeviceStdInputOpts_t   tty_in_opts = 0;
     I8080DeviceStdOutputOpts_t  tty_out_opts = 0;
     I8080Addr_t                 SP = 0x0000, PC=0x0000;
+    I8e8eCGA_t                  cga;
+    bool                        has_cga = false;
     I8e8eMemObj_t              *memobjs = NULL, *memobjs_tail = NULL;
     I8e8eROMMappingMode_t       rom_mapmode = kI8e8eROMMappingModeAlloc;
     I8e8eFileDeviceObj_t        *filedevobjs = NULL, *filedevobjs_tail = NULL;
+    I8080Addr_t                 timer_addr;
+    bool                        have_timer;
     char                        *str;
     
     signal(SIGINT, handle_sigint);
@@ -397,6 +550,33 @@ main(
                 }
                 break;
             }
+            
+            case 'T': {
+                if ( ! I8080AddrParse(optarg, &timer_addr, NULL) ) {
+                    ERROR("Unable to parse realtime timer mapping address: %s", optarg);
+                    exit(EINVAL);
+                }
+                have_timer = true;
+                break;
+            }
+            
+            case 'c': {
+                if ( ! I8e8eCGAParse(optarg, &cga) ) exit(EINVAL);
+                has_cga = true;
+                break;
+            }
+            
+            case 'p': {
+                I8080CGAPaletteId_t     palette_id = kI8080CGAPaletteIdDefault;
+                
+                printf("\nAvailable CGA palettes (by id and name):\n\n");
+                while ( palette_id < kI8080CGAPaletteIdMax ) {
+                    printf(" %3d: %s\n", palette_id, I8080CGAPaletteIdStrs[palette_id]);
+                    palette_id++;
+                }
+                fputc('\n', stdout);
+                exit(0);
+            }
         }
     }
     
@@ -446,78 +626,101 @@ main(
     }
 
     // Walk the memory objects to attach ROMs and unmapped segments:
-    const I8080MemCallbacks *last_callbacks = NULL;
-    const void              *last_context = NULL;
-    I8e8eMemObj_t           *this_mem_obj = memobjs;
+    I8e8eMemObj_t   *this_mem_obj = memobjs;
     
     while ( this_mem_obj ) {
+        I8080AddrRange_t        paged_addr = I8080AddrRangeToPages(this_mem_obj->mapper_data.addr_range);
+        
         switch ( this_mem_obj->obj_type ) {
             case kI8e8eMemObjTypeData:
                 break;
                 
             case kI8e8eMemObjTypeROM: {
-                this_mem_obj->callbacks = *I8080MemROMCallbacks;
+                I8080MemROMContextPtr   rom_context;
                 switch ( rom_mapmode ) {
-                    case kI8e8eROMMappingModeAlloc:
-                        this_mem_obj->context.rom = I8080MemROMWithByteRangeInFile(this_mem_obj->addr, this_mem_obj->filepath,
-                                                    this_mem_obj->offset, this_mem_obj->len);
+                    case kI8e8eROMMappingModeAlloc: {
+                        rom_context = I8080MemROMContextWithByteRangeInFile(this_mem_obj->file_path, this_mem_obj->file_offset, this_mem_obj->file_length, paged_addr.length);
                         break;
-#ifdef HAS_MMAP
+                    }
+                    
                     case kI8e8eROMMappingModeMMap: {
-                        int     rom_fd = open(this_mem_obj->filepath, O_RDONLY);
+                        int     rom_fd = open(this_mem_obj->file_path, O_RDONLY);
                         
                         if ( rom_fd < 0 ) {
                             ERROR("Unable to open ROM file for mmap (errno=%d)", errno);
                             exit(errno);
                         }
-                        this_mem_obj->context.rom = I8080MemROMWithMappedFile(this_mem_obj->addr, rom_fd, this_mem_obj->offset,
-                                                    (this_mem_obj->len > 0xFFFF) ? 0xFFFF : this_mem_obj->len);
+                        rom_context = I8080MemROMContextWithMappedFile(rom_fd, this_mem_obj->file_offset,
+                                            (this_mem_obj->file_length > 0xFFFF) ? 0xFFFF : this_mem_obj->file_length, paged_addr.length);
                         close(rom_fd);
                         break;
                     }
-#endif 
+                    
                 }
-                if ( ! this_mem_obj->context.rom ) {
+                if ( ! rom_context ) {
                     ERROR("Unable to allocate ROM context (errno=%d)", errno);
                     exit(errno);
                 }
-                this_mem_obj->context.rom->rom_name = this_mem_obj->filepath;
-                this_mem_obj->context.rom->next_callbacks = last_callbacks;
-                this_mem_obj->context.rom->next_context = last_context;
-                last_callbacks = &this_mem_obj->callbacks;
-                last_context = this_mem_obj->context.rom;
+                this_mem_obj->mapper_data.callbacks = *I8080MemROMCallbacks;
+                this_mem_obj->mapper_data.context = rom_context;
+                rom_context->rom_name = this_mem_obj->file_path;
+                if ( ! I8080MemRegisterMapper(sys8080->sysmem, &this_mem_obj->mapper_data) ) {
+                    exit(ENOMEM);
+                }
                 INFO("Created new %s ROM image @ $%04hX - $%04hX", 
                     (rom_mapmode == kI8e8eROMMappingModeAlloc) ? "allocated buffer" : "memory-mapped",
-                    this_mem_obj->context.rom->rom_addr, this_mem_obj->context.rom->rom_addr + this_mem_obj->context.rom->rom_size - 1);
+                    this_mem_obj->mapper_data.addr_range.base, I8080AddrRangeEndAddr(this_mem_obj->mapper_data.addr_range));
                 break;
             }
             case kI8e8eMemObjTypeUnmapped: {
-                this_mem_obj->callbacks = *I8080MemUnmappedCallbacks;
-                this_mem_obj->context.unmapped = (I8080MemUnmappedContext_t*)calloc(1, sizeof(I8080MemUnmappedContext_t));
-                if ( ! this_mem_obj->context.unmapped ) {
-                    ERROR("Unable to allocate unmapped segment context (errno=%d)", errno);
-                    exit(errno);
+                this_mem_obj->mapper_data.callbacks = *I8080MemUnmappedSegmentCallbacks;
+                this_mem_obj->mapper_data.context = (const void*)(uintptr_t)this_mem_obj->unmapped_byte;
+                if ( ! I8080MemRegisterMapper(sys8080->sysmem, &this_mem_obj->mapper_data) ) {
+                    exit(ENOMEM);
                 }
-                this_mem_obj->context.unmapped->base_address = this_mem_obj->addr;
-                this_mem_obj->context.unmapped->unmapped_size = this_mem_obj->len;
-                this_mem_obj->context.unmapped->unmapped_byte = this_mem_obj->byte;
-                this_mem_obj->context.unmapped->next_callbacks = last_callbacks;
-                this_mem_obj->context.unmapped->next_context = last_context;
-                last_callbacks = &this_mem_obj->callbacks;
-                last_context = this_mem_obj->context.unmapped;
                 INFO("Created new unmapped segment @ $%04hX - $%04hX (byte = 0x%02hhX)", 
-                        this_mem_obj->context.unmapped->base_address,
-                        this_mem_obj->context.unmapped->base_address + this_mem_obj->context.unmapped->unmapped_size,
-                        this_mem_obj->context.unmapped->unmapped_byte);
+                        this_mem_obj->mapper_data.addr_range.base, I8080AddrRangeEndAddr(this_mem_obj->mapper_data.addr_range), this_mem_obj->unmapped_byte);
                 break;
             }
         }
         this_mem_obj = this_mem_obj->link;
     }
     
-    // If we setup any callbacks and contexts, attach them now:
-    if ( last_callbacks ) {
-        I8080MemSetCallbacks(sys8080->sysmem, last_callbacks, last_context);
+    // Was CGA requested?
+    if ( has_cga ) {
+        I8080CGAMapperContextPtr    cga_context;
+        I8080MemMapperRef_t         mapper_data = { .callbacks = *I8080CGAMapperCallbacks };
+        
+        if ( cga.has_dims ) {
+            cga_context = I8080CGAMapperContextCreateWithOriginAndSize(cga.mode, cga.x, cga.y, cga.w, cga.h);
+        } else {
+            cga_context = I8080CGAMapperContextCreateWithWindow(cga.mode, NULL);
+        }
+        mapper_data.addr_range = I8080AddrRangeCreate(cga.base_addr, cga_context->n_pages_required << 8);
+        mapper_data.context = cga_context;
+        if ( cga_context->n_pages_required > I8e8eCGASoftPageLimit ) {
+            WARNING("CGA adapter requires $%02hX pages of memory", cga_context->n_pages_required);
+        }
+        if ( cga_context->n_pages_required > I8e8eCGAHardPageLimit ) {
+            ERROR("CGA adapter would require more than $%02hX pages of memory", I8e8eCGAHardPageLimit);
+            exit(ENOMEM);
+        }
+        cga_context->color_palette = I8080CGAPalettes[cga.palette_id];
+        if ( ! I8080MemRegisterMapper(sys8080->sysmem, &mapper_data) ) {
+            exit(EINVAL);
+        }
+    }
+    
+    // Realtime timer?
+    if ( have_timer ) {
+        I8080TimerContextPtr    timer = I8080TimerContextCreate(sys8080);
+        I8080MemMapperRef_t     mapper_data = { .addr_range = I8080AddrRangeCreate(timer_addr, 0x0100),
+                                                .callbacks = *I8080TimerMapperCallbacks,
+                                                .context = timer };
+                
+        if ( ! I8080MemRegisterMapper(sys8080->sysmem, &mapper_data) ) {
+            exit(EINVAL);
+        }
     }
 
     // Set power on:
@@ -528,36 +731,44 @@ main(
     while ( this_mem_obj ) {
         switch ( this_mem_obj->obj_type ) {
             case kI8e8eMemObjTypeData: {
-                FILE        *fptr = fopen(this_mem_obj->filepath, "rb");
-                bool        full_length = (this_mem_obj->len == 0);
-                I8080Addr_t addr = this_mem_obj->addr;
+                FILE        *fptr = fopen(this_mem_obj->file_path, "rb");
+                bool        full_length = (this_mem_obj->file_length == 0);
+                I8080Addr_t addr = this_mem_obj->mapper_data.addr_range.base;
                 size_t      n_bytes = 0;
+                
+                if ( this_mem_obj->mapper_data.addr_range.length > 0 ) {
+                    // An address range was provided, does it limit the read?
+                    if ( full_length || (this_mem_obj->mapper_data.addr_range.length < this_mem_obj->file_length) ) {
+                        this_mem_obj->file_length = this_mem_obj->mapper_data.addr_range.length;
+                        full_length = false;
+                    } 
+                }
                 
                 if ( ! fptr ) {
                     ERROR("Unable to open file `%s` to load data to system memory (errno=%d)",
-                            this_mem_obj->filepath, errno);
+                            this_mem_obj->file_path, errno);
                     exit(errno);
                 }
-                if ( this_mem_obj->offset ) {
-                    if ( fseeko(fptr, this_mem_obj->offset, SEEK_SET) ) {
+                if ( this_mem_obj->file_offset ) {
+                    if ( fseeko(fptr, this_mem_obj->file_offset, SEEK_SET) ) {
                         ERROR("Unable to move to offset %lld in `%s` to load data to system memory (errno=%d)",
-                            this_mem_obj->offset, this_mem_obj->filepath, errno);
+                            this_mem_obj->file_offset, this_mem_obj->file_path, errno);
                         exit(errno);
                     }
                 }
-                while ( full_length || (this_mem_obj->len > 0) ) {
+                while ( full_length || (this_mem_obj->file_length > 0) ) {
                     uint8_t     byte;
                     
                     if ( fread(&byte, 1, 1, fptr) != 1 ) break;
                     I8080MemWrite(sys8080->sysmem, addr++, byte);
-                    this_mem_obj->len--, n_bytes++;
+                    this_mem_obj->file_length--, n_bytes++;
                 }
-                if ( ! full_length && this_mem_obj->len > 0 ) {
-                    ERROR("Unable to read all bytes from `%s` (%lld unread)", this_mem_obj->filepath, this_mem_obj->len);
+                if ( ! full_length && this_mem_obj->file_length > 0 ) {
+                    ERROR("Unable to read all bytes from `%s` (%lld unread)", this_mem_obj->file_path, this_mem_obj->file_length);
                     exit(EINVAL);
                 }
                 fclose(fptr);
-                INFO("Added %lld bytes to system memory starting at $%04hX\n", n_bytes, this_mem_obj->addr);
+                INFO("Added %lld bytes to system memory starting at $%04hX\n", n_bytes, this_mem_obj->mapper_data.addr_range.base);
                 break;
             }
             case kI8e8eMemObjTypeROM:
@@ -573,9 +784,12 @@ main(
     INFO("Running with program counter (PC) set to $%04hX", PC);
     I8080SystemRun(sys8080, PC);
     
+    I8080CGAShutdown();
+    
     printf("\n");
     I8080RegistersPrint(stdout, &sys8080->rgstrs);
     I8080DevBusPrint(stdout, sys8080->devbus);
+    I8080MemPrint(stdout, sys8080->sysmem);
     
     I8080SystemSetPowerState(sys8080, false);
     I8080SystemDestroy(sys8080);

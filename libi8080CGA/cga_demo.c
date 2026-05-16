@@ -18,58 +18,32 @@ main(
     const char* argv[]
 )
 {
-    I8080CGAContextPtr  context;
-    I8080CGAPaletteId_t palette_id = kI8080CGAPaletteIdDefault;
+    I8080CGAMapperContextPtr    context = NULL;
+    I8080CGAPaletteId_t         palette_id = kI8080CGAPaletteIdDefault;
+    int                         w, h;
     
     if ( argc > 1 ) {
         long        id = strtol(argv[1], NULL, 0);
         if ( id >= kI8080CGAPaletteIdDefault && id < kI8080CGAPaletteIdMax ) palette_id = id;
     }
     
-    I8080CGAInit();
-    
-    keypad(stdscr, TRUE);
-    nodelay(stdscr, FALSE);
-    clearok(stdscr, FALSE);
-    leaveok(stdscr, TRUE);
-    scrollok(stdscr, FALSE);
-    immedok(stdscr, FALSE);
-    curs_set(0);
-    clear();
-    
-    int         w, h;
-    
-    getmaxyx(stdscr, h, w);
-    
-    WINDOW      *cga_display = newwin(h - 4, w - 4, 2, 2);
-    
-    context = I8080CGAContextCreate(
-                    0x4000,
-                    kI8080CGAModeClrGraphics,
-                    cga_display);
+    context = I8080CGAMapperContextCreateWithOriginAndSize(kI8080CGAModeClrGraphics, 4, 4, 80, 40);
     if ( context ) {
-        keypad(cga_display, TRUE);
-        nodelay(cga_display, FALSE);
-        clearok(cga_display, FALSE);
-        leaveok(cga_display, TRUE);
-        scrollok(cga_display, FALSE);
-        immedok(cga_display, FALSE);
+        int         x, y, r2max, c;
         
-        wrefresh(cga_display);
-        refresh();
+        context->color_palette = I8080CGAPalettes[palette_id];
         
-        I8080CGAContextLoadColorPalette(context, I8080CGAPalettes[palette_id]);
+        I8080CGAMapperContextSetEnable(context, 1);
         
-        int         x, y, c;
-        int         r2max = (context->rgstrs.width < context->rgstrs.height) ?
-                                context->rgstrs.width * context->rgstrs.width / 4 :
-                                context->rgstrs.height * context->rgstrs.height / 4;
-                                
-        box(cga_display, -1, -1);
-        for ( y = 0; y < context->rgstrs.height; y++ ) {
-            for ( x = 0; x < context->rgstrs.width; x++ ) {
-                int     dx = x - (context->rgstrs.width / 2),
-                        dy = y - (context->rgstrs.height / 2);
+        w = I8080CGAMapperContextGetRegister(context, kI8080CGARegisterWidth);
+        h = I8080CGAMapperContextGetRegister(context, kI8080CGARegisterHeight);
+        
+        I8080CGAMapperContextSetRegister(context, kI8080CGARegisterEnable, 0b10000001);
+        r2max = (w < h) ? w/2 : h/2, r2max *= r2max;
+        for ( y = 0; y < h; y++ ) {
+            for ( x = 0; x < w; x++ ) {
+                int     dx = x - (w / 2),
+                        dy = y - (h / 2);
                 double  r2 = dx * dx + dy * dy;
                 uint8_t p;
                 
@@ -78,44 +52,40 @@ main(
                 } else {
                     p = 0;
                 }
-                
-                I8080CGAContextWriteXY(context, x, y, p);
+                I8080CGAMapperContextWriteXY(context, x, y, p);
             }
         }
-        box(cga_display, -1, -1);
-        wrefresh(cga_display);
-        refresh();
+        box(context->wndw, -1, -1);
+        I8080CGAMapperContextSetRegister(context, kI8080CGARegisterEnable, 0b00000001);
         
         getch();
-        wclear(cga_display);
-        clear();
-        wrefresh(cga_display);
-        refresh();
         
-        r2max = context->rgstrs.width / I8080CGAPalettes[palette_id]->n_colors;
+        I8080CGAMapperContextSetEnable(context, 0);
+        printf("wait for it...\n");
+        sleep(5);
+        I8080CGAMapperContextSetEnable(context, 1);
+        
+        I8080CGAMapperContextSetRegister(context, kI8080CGARegisterEnable, 0b10000001);
+        r2max = w / I8080CGAPalettes[palette_id]->n_colors;
         if ( r2max == 0 ) r2max = 1;
-        for ( y = 0; y < context->rgstrs.height; y++ ) {
+        for ( y = 0; y < h; y++ ) {
             c = 1;
-            for ( x = 0; x < context->rgstrs.width && c <= I8080CGAPalettes[palette_id]->n_colors;  ) {
+            for ( x = 0; x < w && c <= I8080CGAPalettes[palette_id]->n_colors;  ) {
                 int     n = r2max;
-                while ( n-- ) I8080CGAContextWriteXY(context, x++, y, c);
+                while ( n-- ) I8080CGAMapperContextWriteXY(context, x++, y, c);
                 c++;
             }
         }
-        box(cga_display, -1, -1);
-        wrefresh(cga_display);
-        refresh();
+        box(context->wndw, -1, -1);
+        I8080CGAMapperContextSetRegister(context, kI8080CGARegisterEnable, 0b00000001);
         
         getch();
-        clear();
-        wrefresh(cga_display);
-        refresh();
         
-        I8080CGAContextRestoreColors(context);
+        I8080CGAMapperContextSetEnable(context, 0);
     }
-    I8080CGAShutdown();
     
-    printf("%d %d | %d %d \n", context->rgstrs.width, context->rgstrs.height, h, w);
+    
+    printf("%d %d \n", h, w);
     
     return 0;
 }

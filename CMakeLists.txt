@@ -15,5 +15,10 @@ if ( ${I8080CGA_ENABLE} )
 add_subdirectory(libi8080CGA)
 endif ()
 
+option(I8080TIMER_ENABLE "Enable build of the realtime timers library" ON)
+if ( ${I8080TIMER_ENABLE} )
+add_subdirectory(libi8080Timer)
+endif ()
+
 add_subdirectory(demo)
 add_subdirectory(i8e8e)

@@ -19,6 +19,10 @@
 #include "I8080Instructions.h"
 #include "I8080Timing.h"
 
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+#   include <pthread.h>
+#endif
+
 /**
  * State of the system
  * Enumerated bitvector values that indicate the state the
@@ -28,7 +32,7 @@ typedef enum {
     kI8080SystemStateOff        = 0b0,      /*!< power off, nothing happening */
     kI8080SystemStateOn         = 0b1,      /*!< power is on, may or may not be running code */
     kI8080SystemStateRunning    = 0b10,     /*!< a program has started running */
-    kI8080SystemStateInterrupt  = 0b100,    /*!< execution was interrupted */
+    kI8080SystemStateBreak      = 0b100,    /*!< execution was interrupted */
     kI8080SystemStateBadInstr   = 0b1000,   /*!< an invalid instruction was encountered */
     
     kI8080SystemStateError      = 0b1100    /*!< all error states */
@@ -104,6 +108,13 @@ typedef struct I8080System {
                                          the device bus */
     I8080SystemState_t      state;  /*!< the state in which the system is currently operating */
     I8080Microseconds       last_cycle; /*!< timestamp of the last-run cycle */
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+    struct {
+        pthread_mutex_t     lock;       /*!< sync lock used by the interrupt API components */
+        bool                is_raised;  /*!< an interrupt has been raised */
+        I8080Instr_t        opcode;     /*!< the single-byte opcode provided by the interrupting device */
+    } interrupt;
+#endif
     const void              *aux_data; /*!< pointer to the extra bytes requested as part of this
                                                instance */
 } I8080System_t;
@@ -180,11 +191,24 @@ bool I8080SystemSetPowerState(I8080SystemPtr sys8080, bool is_on);
 /** 
  * Break out of running program
  * If the system is in the on and running state, force it into the
- * on but not running state.  The \ref kI8080SystemStateInterrupt
+ * on but not running state.  The \ref kI8080SystemStateBreak
  * bit is set on the system state.
  * @param sys8080       the system to alter
  */
-void I8080SystemInterrupt(I8080SystemPtr sys8080);
+void I8080SystemBreak(I8080SystemPtr sys8080);
+
+/**
+ * Attempt to raise a hardware interrupt
+ * On the 8080, a device that raises an interrupt provides the CPU with
+ * a single one-byte opcode to be executed on the next dispatch cycle.
+ *
+ * Note that this function is always present in the API, but will only
+ * be functional if I8080_SYSTEM_ENABLE_INTERRUPT_API was enabled at
+ * build.
+ * @param sys8080           the system to alter
+ * @param interrupt_opcode  the single opcode to be executed
+ */
+void I8080SystemRaiseInterrupt(I8080SystemPtr sys8080, I8080Instr_t interrupt_opcode);
 
 /**
  * Set the program counter

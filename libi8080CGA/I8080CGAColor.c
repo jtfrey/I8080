@@ -564,16 +564,68 @@ static const I8080CGAPalette_t I8080CGAPaletteAAPSplendor = {
                     { 0x2a, 0x1e, 0x23 } }
     };
 
+static const I8080CGAPalette_t I8080CGAPaletteAppleIILoRes = {
+        .n_colors = 16,
+        .colors = { { 0x00, 0x00, 0x00 },
+                    { 0x93, 0x0B, 0x7C },
+                    { 0x1F, 0x35, 0xD3 },
+                    { 0xBB, 0x36, 0xFF },
+                    { 0x00, 0x76, 0x0C },
+                    { 0x7E, 0x7E, 0x7E },
+                    { 0x00, 0x89, 0xFF },
+                    { 0x56, 0xCC, 0xFF },
+                    { 0x88, 0x55, 0x00 },
+                    { 0xFF, 0x71, 0x14 },
+                    { 0xA9, 0xA9, 0xA9 },
+                    { 0xFF, 0x8C, 0xFF },
+                    { 0x00, 0xE5, 0x1E },
+                    { 0xFF, 0xE3, 0x16 },
+                    { 0x7C, 0xFF, 0xD3 },
+                    { 0xFF, 0xFF, 0xFF } }
+    };
+
+static const I8080CGAPalette_t I8080CGAPaletteAppleIIHiRes = {
+        .n_colors = 6,
+        .colors = { { 0x00, 0x00, 0x00 },
+                    { 0xB6, 0x3D, 0xFF },
+                    { 0xEA, 0x5D, 0x15 },
+                    { 0x10, 0xA4, 0xE3 },
+                    { 0x43, 0xC3, 0x00 },
+                    { 0xFF, 0xFF, 0xFF } }
+    };
+
+static const I8080CGAPalette_t I8080CGAPaletteRealCGA = {
+        .n_colors = 16,
+        .colors = { { 0x00, 0x00, 0x00 },
+                    { 0x55, 0x55, 0x55 },
+                    { 0x00, 0x00, 0xAA },
+                    { 0x55, 0x55, 0xFF },
+                    { 0x00, 0xAA, 0x00 },
+                    { 0x55, 0xFF, 0x55 },
+                    { 0x00, 0xAA, 0xAA },
+                    { 0x55, 0xFF, 0xFF },
+                    { 0xAA, 0x00, 0x00 },
+                    { 0xFF, 0x55, 0x55 },
+                    { 0xAA, 0x00, 0xAA },
+                    { 0xFF, 0x55, 0xFF },
+                    { 0xAA, 0x55, 0x00 },
+                    { 0xFF, 0xFF, 0x55 },
+                    { 0xAA, 0xAA, 0xAA },
+                    { 0xFF, 0xFF, 0xFF } }
+    };
+
 static const I8080CGAPalette_t I8080CGAPalette1BitMonitorGlow = {
         .n_colors = 2,
         .colors = { { 0x22, 0x23, 0x23 },
                     { 0xf0, 0xf6, 0xf0 } }
     };
 
-
-
+//
 
 const I8080CGAPalettePtr I8080CGAPalettes[kI8080CGAPaletteIdMax] = {
+            &I8080CGAPaletteRealCGA,
+            &I8080CGAPaletteAppleIILoRes,
+            &I8080CGAPaletteAppleIIHiRes,
             &I8080CGAPalette4BitRGB,
             &I8080CGAPaletteRustGold,
             &I8080CGAPaletteNESClassic,
@@ -588,3 +640,51 @@ const I8080CGAPalettePtr I8080CGAPalettes[kI8080CGAPaletteIdMax] = {
             &I8080CGAPaletteAAPSplendor,
             &I8080CGAPalette1BitMonitorGlow
     };
+
+//
+
+const char* I8080CGAPaletteIdStrs[] = {
+        "4bitRGB",
+        "RustGold",
+        "NESClassic",
+        "CC29",
+        "BlkEx96",
+        "StrangeFantasy",
+        "Sunfall12",
+        "SpookyFruit",
+        "LoSpec500",
+        "ThirtyOne",
+        "Resurrect64",
+        "AAPSplendor",
+        "1BitMonitorGlow",
+        NULL
+    };
+
+bool
+I8080CGAPaletteIdParse(
+    const char          *in_str,
+    I8080CGAPaletteId_t *palette_id,
+    const char          **end_str
+)
+{
+    const char*         *id_strs = I8080CGAPaletteIdStrs;
+    char                *endptr;
+    long                i = 0;
+    
+    while ( *id_strs ) {
+        if ( strcasecmp(in_str, *id_strs) == 0 ) {
+            *palette_id = i;
+            *end_str = in_str + strlen(*id_strs);
+            return true;
+        }
+        i++, id_strs++;
+    }
+    
+    i = strtol(in_str, &endptr, 0);
+    if ( (i >= 0) && (i < kI8080CGAPaletteIdMax) && (endptr > in_str) ) {
+        *palette_id  = i;
+        *end_str = endptr;
+        return true;
+    }
+    return false;
+}

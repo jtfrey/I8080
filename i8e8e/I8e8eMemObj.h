@@ -23,16 +23,13 @@ typedef enum {
 typedef struct I8e8eMemObj {
     struct I8e8eMemObj              *link;
     I8e8eMemObjType_t               obj_type;
-    off_t                           offset;
-    off_t                           len;
-    I8080Addr_t                     addr;
-    uint8_t                         byte;
-    union {
-        I8080MemROMContext_t        *rom;
-        I8080MemUnmappedContext_t   *unmapped;
-    } context;
-    I8080MemCallbacks               callbacks;
-    char                            filepath[];
+    I8080MemMapperRef_t             mapper_data;
+    
+    uint8_t                         unmapped_byte;
+    
+    off_t                           file_offset;
+    off_t                           file_length;
+    char                            file_path[];
 } I8e8eMemObj_t;
 
 I8e8eMemObj_t* I8e8eMemObjParse(I8e8eMemObjType_t type, const char *in_str);

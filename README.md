@@ -47,14 +47,63 @@ The 8080 could be used with a variety of memory technologies:  RAM, ROM, etc.  A
 
 It's tempting on a modern system to just use an array of 65536 bytes for this piece.  My demo program was a meager 59 bytes, so that would be massive overkill.  I could also imagine having a standard subroutine ROM that I'd like to map to a section of the address space, and having it be mutable would be very problematic!
 
-The `I8080Mem` pseudo-class splits the system memory into 256-byte pages.  The object includes a 256-element array of page-pointers that starts empty.  Only when a byte is written to a page will that page be allocated.  A simple external callback mechanism allows interception of read/write calls.  A ROM can then be implemented as:
+The `I8080Mem` pseudo-class splits the system memory into 256-byte pages.  The object includes a 256-element array of page-pointers that starts empty.  Only when a byte is written to a page will that page be allocated.  An external callback mechanism facilitates _memory mappers_ that can intercept read/write calls or rewrite the target address.  Only one memory mapper can be associated with a page of memory, but can span an arbitrary number of pages.  This makes it straightforward to implement a ROM image:
 
 - A read callback that accesses the external ROM image, not the memory pages themselves
 - A write callback that is a no-op
 
-The callbacks indicate to `I8080Mem` whether or not they handled the operation; if not, `I8080Mem` can proceed as normal.  Another application is _mirroring_, where multiple ranges of address space all access the same underlying memory (the NES did a lot of this with the 6502).  The read and write callbacks have the ability to modify the address and pass control back to `I8080Mem`, effectively filtering the address for operations.
+The read/write callbacks indicate to `I8080Mem` whether or not they handled the operation; if not, `I8080Mem` can proceed as normal.  Another application is _mirroring_, where multiple ranges of address space all access the same underlying memory (the NES did a lot of this with the 6502).  The address-rewrite callback can modify the address and pass control back to `I8080Mem`, effectively filtering the address for operations.
 
 The pseudo-class includes helper functions to move chunks of data into and out of the memory space.  This is useful for loading code and data, or making core dumps for post-mortem on failing code.
+
+#### "CGA"
+
+An additional library is present in the project that adds a _Curses Graphics Adapter_ memory mapper.  The **curses** screen display library is used to display text, black-and-white graphics, or 8-bit indexed color graphics on the terminal.  The black-and-white graphics mode uses normal space characters for black and reverse video space characters as white.  For color graphics mode, the terminal **must** support curses color functions; custom color palettes can be loaded (or created from within the emulated system itself) if the terminal supports changing the color.  Color pixels are drawn as a space character with the color pair attribute set to the desired color index.  In all three modes, a position on the screen is mapped to a byte in the memory space to which the adapter is mapped.  For the following sections, it will be assumed that the CGA device is mapped at address  `$4000` through `$5FFF`.
+
+##### Registers
+
+The first 16 bytes of the mapped memory space are the CGA _registers_ that software within the emulated system can use to control the CGA device.
+
+| Index | Addr | Name | Description |
+| :---: | :--: | :--- | :---------- |
+| `0`   | `$4000` | `supmodes` | (Read-only) the display modes supported by this device (see below) |
+| `1`   | `$4001` | `width` | (Read-only) the width of the display |
+| `2`   | `$4002` | `height` |  (Read-only) the height of the display |
+| `3`   | `$4003` | `ncolors` |  (Read-only) the number of colors supported |
+| `4`   | `$4004` | `enable` |  Disable the display = `0`; enable = non-zero; deferred redraw = non-zero with MSb set (clear the MSb to trigger screen draw) |
+| `5`   | `$4005` | `x` |  x-coordinate, used with triggered display operations |
+| `6`   | `$4006` | `y` |  y-coordinate, used with triggered display operations |
+| `7`   | `$4007` | `i` |  index, used with triggered display operations |
+| `8`   | `$4008` | `r` |  red intensity, used with triggered display operations |
+| `9`   | `$4009` | `g` |  green intensity, used with triggered display operations |
+| `10`  | `$400A` | `b` |  blue intensity, used with triggered display operations |
+| `11`  | `$400B` | `u16lo` | LSB of a 16-bit value, used with triggered display operations |
+| `12`  | `$400C` | `u16hi` | MSB of a 16-bit value, used with triggered display operations |
+| `13`  | `$400D` | `mode` | video mode: 0=text, 1=b&w graphics, 2=color graphics |
+| `14`  | `$400E` | `op` | trigger a display operation |
+
+The typical startup scenario is to enable the display by writing a non-zero value to the `enable` register; this will populate the read-only registers and put the display in the default initial mode.  The `mode` register can then be written with the desired display mode — the code can re-read the register to ensure that the mode has been entered (if mode 2 is requested but curses does not support color, the mode would remain unchanged).
+
+##### Triggered operations
+
+Writing the following values to the `op` register will trigger a display operation:
+
+|     `op`     | Name          | Description |
+| :----------: | :------------ | :---------- |
+|    `0x01`    | `clear`       | Clear the screen |
+|    `0x02`    | `clearrow`    | Clear the row indicated by the `y` register |
+|    `0x03`    | `clearcol`    | Clear the column indicated by the `x` register |
+|    `0x10`    | `writenchars` | The `u16lo` and `u16hi` registers are set to the address of a sequence of bytes/characters; the `i` register is set to the number of bytes/characters; and the `x` and `y` registers indicate the starting coordinate:  write bytes/characters to the display |
+|    `0x11`    | `writecstr`   | The `u16lo` and `u16hi` registers are set to the address of a NUL-terminated sequence of bytescharacters; and the `x` and `y` registers indicate the starting coordinate:  write bytes/characters to the display |
+|    `0x20`    | `getcolorrgb` | The `i` register is set to a color index; the `r`, `g`, and `b` registers will contain the component intensities for the color with that index |
+|    `0x21`    | `setcolorrgb` | The `i` register is set to a color index and the `r`, `g`, and `b` registers are set to the component intensities; the color at index `i` will be set to those values |
+| `0b1XXXXXXX` | `fill`        | The lower 7-bits of the value will be written to every screen element of the display; for text, this will fill the screen with a single ASCII character; for graphics, the screen will be filled with the given color |
+
+##### Addressing display elements
+
+Each individual cell of the graphics array occupies a byte of memory starting at an offset of 16 bytes from the base mapped address:  in this example, that would put the upper-left corner at `$4010`.  For an 80x40 display, 3200 bytes are necessary (`$C80`) putting the total address space occupied at `$C90` bytes; the final display element at the bottom-right would reside at `$C8F`.
+
+Display elements are ordered in row-major format:  display elements of the first row occupy a sequence of bytes matching the width of the display (which can be determined using the `width` register), followed by the second row, through the height of the display (which can be determined using the `height` register).
 
 ### Device bus
 

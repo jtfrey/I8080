@@ -40,6 +40,45 @@ Loop:               in      10              ; read a random byte
                     out     0
                     mov     a, c
                     out     0
+                    in      0
+                    
+                    ;
+                    ; This code is meant to interface with a CGA device
+                    ; mapped at $4000
+                    ;
+                    mvi     a, 01h
+                    sta     4004h       ; enable = 1 (start display)
+                    mvi     a, 2
+                    sta     400Dh       ; mode = 2
+                    
+                    lxi     b, 4010h    ; BC <= base address of pixels
+                    lda     4001h       ; A <= width of display
+                    mov     d, a        ; D <= A = width of display
+                    dcr     d           ; pre-decrement D to avoid an extra pixel
+                    mvi     a, 3        ; A <= 3 (color index)
+Draw:               inr     a
+                    stax    b           ; (BC) <= A (store the pixel)
+                    inx     b           ; BC <= BC + 1 (next pixel address)
+                    dcr     d           ; D <= D - 1
+                    jm      Draw_x      ; If no more pixels remain, exit the loop now
+                    dcr     a           ; A <= A - 1 = 3 (color index)
+                    stax    b           ; (BC) <= A (store the pixel)
+                    inx     b           ; BC <= BC + 1 (next pixel address)
+                    dcr     d           ; D <= D - 1
+                    jp      Draw        ; If any pixels remain, loop again
+Draw_x:             
+                    in      0           ; wait on a keypress
+                    
+                    mvi     a, 8Dh      ; A <= 0b10001011 (fill screen with 0x0D)
+                    sta     400Eh       ; op = fill w/ 0b1011 = 11
+                    in      0           ; wait on a keypress
+                    
+                    mvi     a, 8Fh      ; A <= 0b10001111 (fill screen with 0x0F)
+                    sta     400Eh       ; op = fill w/ 0b1011 = 15
+                    in      0           ; wait on a keypress
+                    
+                    mvi     a, 00h
+                    sta     4004h       ; enable = 0 (end display)
                     
                     lxi     b, str0001
                     Halt

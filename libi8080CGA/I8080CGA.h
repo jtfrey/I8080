@@ -81,6 +81,33 @@ typedef enum __attribute__((packed)) {
 } I8080CGAOp_t;
 
 /**
+ * Curses "controller" states
+ * Pretend the keyboard is an NES controller.
+ */
+typedef struct __attribute__((packed)) {
+#ifdef BITS_BIG_ENDIAN
+    uint8_t         d_right : 1;
+    uint8_t         d_left : 1;
+    uint8_t         d_down : 1;
+    uint8_t         d_up : 1;
+    uint8_t         start : 1;
+    uint8_t         select : 1;
+    uint8_t         b : 1;
+    uint8_t         a : 1;
+#else
+    uint8_t         a : 1;
+    uint8_t         b : 1;
+    uint8_t         select : 1;
+    uint8_t         start : 1;
+    uint8_t         d_up : 1;
+    uint8_t         d_down : 1;
+    uint8_t         d_left : 1;
+    uint8_t         d_right : 1;
+#endif
+} I8080CGAController_t;
+
+
+/**
  * CGA register index
  * The index of each of the CGA display registers.
  */
@@ -89,7 +116,7 @@ typedef enum {
     kI8080CGARegisterWidth,
     kI8080CGARegisterHeight,
     kI8080CGARegisterNColors,
-    kI8080CGARegisterRedraw,
+    kI8080CGARegisterEnable,
     kI8080CGARegisterX,
     kI8080CGARegisterY,
     kI8080CGARegisterI,
@@ -99,7 +126,8 @@ typedef enum {
     kI8080CGARegisterU16Lo,
     kI8080CGARegisterU16Hi,
     kI8080CGARegisterMode,
-    kI8080CGARegisterOp
+    kI8080CGARegisterOp,
+    kI8080CGARegisterCntrlr
 } I8080CGARegister_t;
 
 /**
@@ -119,24 +147,28 @@ typedef enum {
  * operations are getch()/mvaddch() calls in the device implementation.
  */
 typedef union {
-    uint8_t                 R[16];          /*!< the register array */
+    uint8_t                     R[16];          /*!< the register array */
     struct {
-        uint8_t             supmodes;       /*!< (r/o) bit vector of supported modes */
-        uint8_t             width;          /*!< (r/o) the width of the screen */
-        uint8_t             height;         /*!< (r/o) the height of the screen */
-        uint8_t             ncolors;        /*!< (r/o) the number of supported colors */
-        uint8_t             redraw;         /*!< when set to zero, redraw is deferred until
-                                                 this register is set to non-zero */
-        uint8_t             x;              /*!< x-coordinate register */
-        uint8_t             y;              /*!< y-coordinate register */
-        uint8_t             i;              /*!< index register */
-        uint8_t             r;              /*!< red-intensity register */
-        uint8_t             g;              /*!< green-intensity register */
-        uint8_t             b;              /*!< blue-intensity register */
-        uint8_t             u16lo;          /*!< low-byte of a 16-bit value */
-        uint8_t             u16hi;          /*!< high-byte of a 16-bit value */
-        I8080CGAMode_t      mode;           /*!< the mode in which the display is operating */
-        I8080CGAOp_t        op;             /*!< operation trigger */
+        uint8_t                 supmodes;       /*!< (r/o) bit vector of supported modes */
+        uint8_t                 width;          /*!< (r/o) the width of the screen */
+        uint8_t                 height;         /*!< (r/o) the height of the screen */
+        uint8_t                 ncolors;        /*!< (r/o) the number of supported colors */
+        uint8_t                 enable;         /*!< when set to zero, the CGA display is 
+                                                     not active; setting it to any non-zero
+                                                     value will make it active; setting bit
+                                                     7 will defer redraw until the bit is
+                                                     cleared */
+        uint8_t                 x;              /*!< x-coordinate register */
+        uint8_t                 y;              /*!< y-coordinate register */
+        uint8_t                 i;              /*!< index register */
+        uint8_t                 r;              /*!< red-intensity register */
+        uint8_t                 g;              /*!< green-intensity register */
+        uint8_t                 b;              /*!< blue-intensity register */
+        uint8_t                 u16lo;          /*!< low-byte of a 16-bit value */
+        uint8_t                 u16hi;          /*!< high-byte of a 16-bit value */
+        I8080CGAMode_t          mode;           /*!< the mode in which the display is operating */
+        I8080CGAOp_t            op;             /*!< operation trigger */
+        I8080CGAController_t    cntrlr;         /*!< controller read */
     };
 } I8080CGARegisters_t;
 
@@ -146,46 +178,43 @@ typedef union {
  * callback.
  */
 typedef struct {
-    I8080Addr_t             base_addr;              /*!< where the CGA is mapped in memory */
-    I8080CGARegisters_t     rgstrs;                 /*!< the CGA registers */
     WINDOW                  *wndw;                  /*!< the curses window for the display */
-    const void              *rch;                   /*!< internal only -- this will be setup at
-                                                         instance creation */
-    const void              *wch;                   /*!< internal only -- this will be setup at
-                                                         instance creation */
-    short                   saved_colors[4*254];    /*!< internal only -- this will be setup at
-                                                         instance creation; a 4 x n_color array of
-                                                         (1/0, R, G, B) values when colors are set */
-    //
-    const I8080MemCallbacks *next_callbacks;
-    const void              *next_context;
-} I8080CGAContext_t;
+    int                     w;                      /*!< the width of the display window */
+    int                     h;                      /*!< the height of the display window */
+    int                     x;                      /*!< the x-coordinate of the window origin */
+    int                     y;                      /*!< the y-coordinate of the window origin */
+    uint8_t                 initial_mode;           /*!< initial mode for the display */
+    uint8_t                 n_pages_required;       /*!< how many pages of memory will the adapter
+                                                         occupy -- filled-in at create */
+    I8080CGAPalettePtr      color_palette;          /*!< initial color palette to load when the
+                                                         display is enabled */
+} I8080CGAMapperContext_t;
 
 /**
  * Type of a pointer to a CGA context
  */
-typedef I8080CGAContext_t * I8080CGAContextPtr;
+typedef I8080CGAMapperContext_t * I8080CGAMapperContextPtr;
+
+I8080CGAMapperContextPtr I8080CGAMapperContextCreateWithOriginAndSize(I8080CGAMode_t mode, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
 
 /**
  * Create a CGA callbacks context
- * Allocates and initializes a \ref I8080CGAContext_t to accompany
- * a I8080CGACallbacks memory overlay.  The context will be mapped
- * into the emulator's address space at \p base_addr and wrap the
+ * Allocates and initializes a \ref I8080CGAMapperContext_t to accompany
+ * a I8080CGACallbacks memory overlay.  The context will wrap the
  * curses window, \p wndw.  Read-only registers (like width, height)
  * will be determined and set at this time.  The \p wndw will be set
  * in the desired display \p mode.
  *
  * Initial loading of colors can be done using this API's
- * \ref I8080CGAContextSetColor() function; doing so will ensure
+ * \ref I8080CGAMapperContextSetColor() function; doing so will ensure
  * that when the context is cleaned-up original colors for the
  * user's terminal will be restored.
- * @param base_addr         memory address where the adapter will live
  * @param mode              initial display mode
  * @param wndw              the curses window in which to display
  * @return                  pointer to the newly-initialized
- *                          \ref I8080CGAContext_t or NULL on error
+ *                          \ref I8080CGAMapperContext_t or NULL on error
  */
-I8080CGAContextPtr I8080CGAContextCreate(I8080Addr_t base_addr, I8080CGAMode_t mode, WINDOW *wndw);
+I8080CGAMapperContextPtr I8080CGAMapperContextCreateWithWindow(I8080CGAMode_t mode, WINDOW *wndw);
 
 /**
  * Retrieve a color's channel intensities
@@ -200,7 +229,7 @@ I8080CGAContextPtr I8080CGAContextCreate(I8080Addr_t base_addr, I8080CGAMode_t m
  * @param b                 pointer to the byte that will accept the blue
  *                          intensity
  */
-void I8080CGAContextGetColor(I8080CGAContextPtr cga, int color, uint8_t *r, uint8_t *g, uint8_t *b);
+void I8080CGAMapperContextGetColor(I8080CGAMapperContextPtr cga, int color, uint8_t *r, uint8_t *g, uint8_t *b);
 
 /**
  * Set a color's channel intensities
@@ -212,14 +241,14 @@ void I8080CGAContextGetColor(I8080CGAContextPtr cga, int color, uint8_t *r, uint
  * @param g                 the 8-bit green intensity
  * @param b                 the 8-bit blue intensity
  */
-void I8080CGAContextSetColor(I8080CGAContextPtr cga, int color, uint8_t r, uint8_t g, uint8_t b);
+void I8080CGAMapperContextSetColor(I8080CGAMapperContextPtr cga, int color, uint8_t r, uint8_t g, uint8_t b);
 
 /**
  * Restore curses original color palette
  * The saved original color intensities present in \p cga are restored.
  * @param cga               the CGA context
  */
-void I8080CGAContextRestoreColors(I8080CGAContextPtr cga);
+void I8080CGAMapperContextRestoreColors(I8080CGAMapperContextPtr cga);
 
 /**
  * Set curses colors and pairs from a palette
@@ -229,7 +258,34 @@ void I8080CGAContextRestoreColors(I8080CGAContextPtr cga);
  * @param cga               the CGA context
  * @param palette           pointer to the color palette
  */
-void I8080CGAContextLoadColorPalette(I8080CGAContextPtr cga, I8080CGAPalettePtr palette);
+void I8080CGAMapperContextLoadColorPalette(I8080CGAMapperContextPtr cga, I8080CGAPalettePtr palette);
+
+/**
+ * Get the value of one of the CGA registers
+ * Returns the byte currently occupying the selected CGA
+ * register.
+ * @param cga               the CGA context
+ * @param ridx              register index
+ * @return                  the byte currently in the register
+ */
+uint8_t I8080CGAMapperContextGetRegister(I8080CGAMapperContextPtr cga, I8080CGARegister_t ridx);
+
+/**
+ * Set the value of one of the CGA registers
+ * Attempts to set register \p ridx of \p cga to the value \p byte.
+ * @param cga               the CGA context
+ * @param ridx              register index
+ * @param byte              the value to store to the register
+ * @return                  boolean true if successful
+ */
+bool I8080CGAMapperContextSetRegister(I8080CGAMapperContextPtr cga, I8080CGARegister_t ridx, uint8_t byte);
+
+/**
+ * Convenience function to set the enable register
+ * @param cga               the CGA context
+ * @param enable            the new enable state to set
+ */
+void I8080CGAMapperContextSetEnable(I8080CGAMapperContextPtr cga, uint8_t enable);
 
 /**
  * Read screen element at coordinate
@@ -240,7 +296,7 @@ void I8080CGAContextLoadColorPalette(I8080CGAContextPtr cga, I8080CGAPalettePtr 
  * @param y                 y-coordinate
  * @return                  the screen element
  */
-uint8_t I8080CGAContextReadXY(I8080CGAContextPtr cga, int x, int y);
+uint8_t I8080CGAMapperContextReadXY(I8080CGAMapperContextPtr cga, int x, int y);
 
 /**
  * Write screen element at coordinate
@@ -252,13 +308,13 @@ uint8_t I8080CGAContextReadXY(I8080CGAContextPtr cga, int x, int y);
  * @param y                 y-coordinate
  * @param byte              the screen element to set
  */
-void I8080CGAContextWriteXY(I8080CGAContextPtr cga, int x, int y, uint8_t byte);
+void I8080CGAMapperContextWriteXY(I8080CGAMapperContextPtr cga, int x, int y, uint8_t byte);
 
 /**
  * CGA callbacks
- * Address of the callbacks that implement the \ref I8080CGAContext_t
+ * Address of the callbacks that implement the \ref I8080CGAMapperContext_t
  * operations.
  */
-extern const I8080MemCallbacks *I8080CGACallbacks;
+extern const I8080MemMapperCallbacks *I8080CGAMapperCallbacks;
 
 #endif /* __I8080CGA_H__ */

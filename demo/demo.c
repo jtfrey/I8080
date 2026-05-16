@@ -56,7 +56,7 @@ uint8_t     prgrm[] = {
 volatile I8080SystemPtr sys8080 = NULL;
 
 void handle_sigint(int sig) {
-    I8080SystemInterrupt(sys8080);
+    I8080SystemBreak(sys8080);
 }
 
 int

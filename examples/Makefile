@@ -1,5 +1,5 @@
 
-OBJECTS		= kernel.bin hello_world.bin
+OBJECTS		= kernel.bin hello_world.bin cga_demo.bin
 
 default: $(OBJECTS)
 

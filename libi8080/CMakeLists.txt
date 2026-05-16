@@ -8,6 +8,14 @@ option(I8080_LOGGING_USE_PRETTY_FUNCTION "Use the __PRETTY_FUNCTION__ macro if o
 
 option(I8080_ENABLE_MMAP "Enable mmap() ROM mapping in I8080Memory" ON)
 
+option(I8080_MEMORY_ENABLE_INLINING "Enable inlining of I8080Mem read/write functions" OFF)
+
+option(I8080_SYSTEM_ENABLE_INTERRUPT_API "Enable the I8080System interrupt API" ON)
+
+if ( I8080_SYSTEM_ENABLE_INTERRUPT_API ) 
+    find_package(Threads REQUIRED)
+endif()
+
 #
 # Compiled feature checks
 #
@@ -117,3 +125,8 @@ target_sources(i8080
         FILES
             ${CMAKE_CURRENT_BINARY_DIR}/I8080Config.h
 )
+if ( I8080_SYSTEM_ENABLE_INTERRUPT_API )
+    target_link_libraries(i8080
+        PUBLIC
+            Threads::Threads)
+endif()

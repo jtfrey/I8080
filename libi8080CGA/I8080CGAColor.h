@@ -17,24 +17,41 @@
  * Pre-built color palettes
  * A collection of 24bpp (8bpc) color palettes downloaded from
  * https://lospec.com/.
+ *
+ * The Apple II palettes come from info found via Google.
  */
 typedef enum {
-    kI8080CGAPaletteIdDefault = 0,
-    kI8080CGAPaletteId4BitRGB = kI8080CGAPaletteIdDefault,
-    kI8080CGAPaletteIdRustGold,
-    kI8080CGAPaletteIdNESClassic,
-    kI8080CGAPaletteIdCC29,
-    kI8080CGAPaletteIdBlkEx96,
-    kI8080CGAPaletteIdStrangeFantasy,
-    kI8080CGAPaletteIdSunfall12,
-    kI8080CGAPaletteIdSpookyFruit,
-    kI8080CGAPaletteIdLoSpec500,
-    kI8080CGAPaletteId31,
-    kI8080CGAPaletteResurrect64,
-    kI8080CGAPaletteId1BitMonitorGlow,
-    kI8080CGAPaletteAAPSplendor,
+    kI8080CGAPaletteIdDefault           = 0,
+    kI8080CGAPaletteIdRealCGA           = kI8080CGAPaletteIdDefault,
+    kI8080CGAPaletteIdAppleIILoRes      = 1,
+    kI8080CGAPaletteIdAppleIIHiRes      = 2,
+    kI8080CGAPaletteId4BitRGB           = 3,
+    kI8080CGAPaletteIdRustGold          = 4,
+    kI8080CGAPaletteIdNESClassic        = 5,
+    kI8080CGAPaletteIdCC29              = 6,
+    kI8080CGAPaletteIdBlkEx96           = 7,
+    kI8080CGAPaletteIdStrangeFantasy    = 8,
+    kI8080CGAPaletteIdSunfall12         = 9,
+    kI8080CGAPaletteIdSpookyFruit       = 10,
+    kI8080CGAPaletteIdLoSpec500         = 11,
+    kI8080CGAPaletteIdThirtyOne         = 12,   /* Actually "31" on LoSpec */
+    kI8080CGAPaletteIdResurrect64       = 13,
+    kI8080CGAPaletteIdAAPSplendor       = 14,
+    kI8080CGAPaletteId1BitMonitorGlow   = 15,
     kI8080CGAPaletteIdMax
 } I8080CGAPaletteId_t;
+
+/**
+ * Textual names for the palette ids
+ * The strings are indexed matching the ids in the \ref I8080CGAPaletteId_t
+ * enumeration.
+ */
+extern const char* I8080CGAPaletteIdStrs[];
+
+/**
+ * Parse a palette id from a string
+ */
+bool I8080CGAPaletteIdParse(const char *in_str, I8080CGAPaletteId_t *palette_id, const char **end_str);
 
 /**
  * A 24bpp (8bpc) color

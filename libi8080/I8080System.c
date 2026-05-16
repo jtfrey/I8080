@@ -44,7 +44,7 @@ I8080SystemCreate(
     if ( sys8080 ) {
         sys8080->options = options & kI8080SystemOptsAll;
         sys8080->rgstrs = I8080Registers();
-        sys8080->sysmem = I8080MemCreate(NULL, NULL);
+        sys8080->sysmem = I8080MemCreate();
         sys8080->devbus = I8080DevBusCreate();
         
         I8080InstrTableInit(&sys8080->itbl, I8080DefaultISA);
@@ -53,6 +53,10 @@ I8080SystemCreate(
         I8080DevBusRegisterDevice(sys8080->devbus, 0, &sys8080->tty, NULL);
         
         sys8080->state = kI8080SystemStateOff;
+        
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+        pthread_mutex_init(&sys8080->interrupt.lock, NULL);
+#endif
         
         DEBUG("Created system %p", sys8080);
     }
@@ -75,7 +79,7 @@ I8080SystemCreateWithTTYContext(
         
         sys8080->options = options & kI8080SystemOptsAll;
         sys8080->rgstrs = I8080Registers();
-        sys8080->sysmem = I8080MemCreate(NULL, NULL);
+        sys8080->sysmem = I8080MemCreate();
         sys8080->devbus = I8080DevBusCreate();
         
         I8080InstrTableInit(&sys8080->itbl, I8080DefaultISA);
@@ -87,6 +91,10 @@ I8080SystemCreateWithTTYContext(
         I8080DevBusRegisterDevice(sys8080->devbus, 0, &sys8080->tty, built_in_context);
         
         sys8080->state = kI8080SystemStateOff;
+        
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+        pthread_mutex_init(&sys8080->interrupt.lock, NULL);
+#endif
         
         DEBUG("Created system %p with TTY context", sys8080);
     }
@@ -102,6 +110,9 @@ I8080SystemDestroy(
 {
     I8080DevBusDestroy(sys8080->devbus);
     I8080MemDestroy(sys8080->sysmem);
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+    pthread_mutex_destroy(&sys8080->interrupt.lock);
+#endif
     free((void*)sys8080);
     DEBUG("Destroyed system %p", sys8080);
 }
@@ -109,7 +120,7 @@ I8080SystemDestroy(
 //
 
 void
-I8080SystemReset(
+__I8080SystemReset(
     I8080SystemPtr  sys8080
 )
 {
@@ -118,6 +129,21 @@ I8080SystemReset(
     I8080DevBusReset(sys8080->devbus);
     sys8080->state = kI8080SystemStateOn;
     INFO("System %p reset and ready", sys8080);
+}
+
+void
+I8080SystemReset(
+    I8080SystemPtr  sys8080
+)
+{
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+    pthread_mutex_lock(&sys8080->interrupt.lock);
+#endif
+    __I8080SystemReset(sys8080);
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+    sys8080->interrupt.is_raised = false;
+    pthread_mutex_unlock(&sys8080->interrupt.lock);
+#endif
 }
 
 //
@@ -130,9 +156,12 @@ I8080SystemSetPowerState(
 {
     bool            ok = false;
     
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+    pthread_mutex_lock(&sys8080->interrupt.lock);
+#endif
     if ( is_on ) {
         if ( ! (sys8080->state & kI8080SystemStateOn) ) {
-            I8080SystemReset(sys8080);
+            __I8080SystemReset(sys8080);
             ok = true;
         }
     } else {
@@ -143,19 +172,44 @@ I8080SystemSetPowerState(
             ok = true;
         }
     }
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+    sys8080->interrupt.is_raised = false;
+    pthread_mutex_unlock(&sys8080->interrupt.lock);
+#endif
     return ok;
 }
 
 //
 
 void
-I8080SystemInterrupt(
+I8080SystemBreak(
     I8080SystemPtr  sys8080
 )
 {
     if ( I8080SystemIsReady(sys8080->state) ) {
-        sys8080->state = (sys8080->state & ~kI8080SystemStateRunning) | kI8080SystemStateInterrupt;
+        sys8080->state = (sys8080->state & ~kI8080SystemStateRunning) | kI8080SystemStateBreak;
     }
+}
+
+//
+
+void
+I8080SystemRaiseInterrupt(
+    I8080SystemPtr  sys8080,
+    I8080Instr_t    interrupt_opcode
+)
+{
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+    if ( I8080SystemIsRunning(sys8080->state) ) {
+        pthread_mutex_lock(&sys8080->interrupt.lock);
+        if ( sys8080->rgstrs.INTE ) {
+            sys8080->interrupt.is_raised = true;
+            sys8080->interrupt.opcode = interrupt_opcode;
+            sys8080->rgstrs.INTE = 0;
+        }
+        pthread_mutex_unlock(&sys8080->interrupt.lock);
+    }
+#endif
 }
 
 //
@@ -167,8 +221,14 @@ I8080SystemSetPC(
 )
 {
     if ( I8080SystemIsReady(sys8080->state) ) {
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+        pthread_mutex_lock(&sys8080->interrupt.lock);
+#endif
         sys8080->rgstrs.PC = origin;
         DEBUG("Forcibly set the PC to $%04hX", origin);
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+        pthread_mutex_unlock(&sys8080->interrupt.lock);
+#endif
         return true;
     }
     return false;
@@ -187,6 +247,9 @@ I8080SystemStep(
     if ( I8080SystemIsReady(sys8080->state) ) {
         I8080Instr_t    instr;
         I8080CycleCount elapsed = 0;
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+        bool            reenable_inte = false;
+#endif
         
         if ( ! I8080SystemIsRunning(sys8080->state) ) {
             sys8080->state |= kI8080SystemStateRunning;
@@ -194,8 +257,21 @@ I8080SystemStep(
             INFO("System transitioned to running state");
         }
         
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+        pthread_mutex_lock(&sys8080->interrupt.lock);
+        
+        if ( sys8080->interrupt.is_raised ) {
+            instr = sys8080->interrupt.opcode;
+            reenable_inte = true;
+            DEBUG("Interrupt instruction: 0x%02hhX", instr);
+        } else {
+            instr = I8080InstrFetch(sys8080);
+            DEBUG("Fetched instruction: 0x%02hhX", instr);
+        }
+#else
         instr = I8080InstrFetch(sys8080);
         DEBUG("Fetched instruction: 0x%02hhX", instr);
+#endif
         if ( sys8080->itbl.dispatchers[instr] ) {
             elapsed = sys8080->itbl.dispatchers[instr](sys8080, instr);
             sys8080->rgstrs.CYCLS += elapsed;
@@ -218,6 +294,14 @@ I8080SystemStep(
             ERROR("An illegal instruction (0x%02hhX) was encountered", instr);
         }
         if ( cycles ) *cycles = elapsed;
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+        if ( reenable_inte ) {
+            sys8080->rgstrs.INTE = 1;
+            sys8080->interrupt.opcode = 0x00;
+            sys8080->interrupt.is_raised = false;
+        }
+        pthread_mutex_unlock(&sys8080->interrupt.lock);
+#endif
     }
     return ok;
 }
