@@ -11,12 +11,47 @@
 #include "I8080Registers.h"
 #include <ctype.h>
 
+static
+void
+I8080RegistersFormatTime(
+    char    *sbuf,
+    int     sbuf_len,
+    double  t
+)
+{
+    //
+    // 5 min = 3e8 µs
+    //
+    if ( t < 3e8 ) {
+        //
+        // 5 ms = 3e5 µs
+        //
+        if ( t < 3e5) {
+            snprintf(sbuf, sbuf_len, "%10.0f µs", t);
+        } else {
+            snprintf(sbuf, sbuf_len, "%10.0f ms", t * 1e-3);
+        }
+    } else {
+        double          h, m;
+        // µs -> s
+        t *= 1e-6;
+        t = modf(t/3600.0, &h);
+        t = 60.0 * modf(t*60.0, &m);
+        snprintf(sbuf, sbuf_len, "%04.0fh%02.0fm%04.1fs", h, m, t);
+    }
+}
+
+//
+
 void
 I8080RegistersPrint(
     FILE                *stream,
     I8080Registers_t    *rgstrs
 )
 {
+    char                timestr[32];
+    
+    I8080RegistersFormatTime(timestr, sizeof(timestr), I8080CycleCountToMicroseconds(rgstrs->CYCLS));
     fprintf(stream,
         " ____________________________________________________________________________________________\n"
         "| [B]=[0x%1$02hhX|%1$-3hhu|%1$-4hhd|%23$c] [C]=[0x%2$02hhX|%2$-3hhu|%2$-4hhd|%24$c]  "
@@ -32,7 +67,7 @@ I8080RegistersPrint(
         "[PSW]=[0x%12$04hX|%12$-5hu|%12$-6hd]   %13$X %14$X 0 %15$X 0 %16$X 1 %17$X |\n"
         
         "|                                               [PC]=[0x%18$04hX|%18$-5hu|%18$-6hd]                   |\n"
-        "| [CYCLS]=[0x%19$012llX][%22$10.0f µs]       [SP]=[0x%20$04hX|%20$-5hu|%20$-6hd]           [%21$c]INTE |\n"
+        "| [CYCLS]=[0x%19$012llX][%22$13s]       [SP]=[0x%20$04hX|%20$-5hu|%20$-6hd]           [%21$c]INTE |\n"
         "|____________________________________________________________________________________________|\n",
         rgstrs->B, rgstrs->C, rgstrs->BC,
         rgstrs->D, rgstrs->E, rgstrs->DE,
@@ -41,7 +76,7 @@ I8080RegistersPrint(
         rgstrs->S, rgstrs->Z, rgstrs->AC, rgstrs->P, rgstrs->CY,
         rgstrs->PC, rgstrs->CYCLS, rgstrs->SP,
         (rgstrs->INTE ? '*' : ' '),
-        I8080CycleCountToMicroseconds(rgstrs->CYCLS),
+        timestr,
         isprint(rgstrs->B) ? rgstrs->B : ' ', isprint(rgstrs->C) ? rgstrs->C : ' ',
         isprint(rgstrs->D) ? rgstrs->D : ' ', isprint(rgstrs->E) ? rgstrs->E : ' ',
         isprint(rgstrs->H) ? rgstrs->H : ' ', isprint(rgstrs->L) ? rgstrs->L : ' ',

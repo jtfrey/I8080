@@ -260,6 +260,7 @@ I8080SystemStep(
         if ( sys8080->interrupt.is_raised ) {
             instr = sys8080->interrupt.opcode;
             DEBUG("Interrupt instruction: 0x%02hhX", instr);
+            sys8080->interrupt.is_raised = false;
         } else {
             instr = I8080InstrFetch(sys8080);
             DEBUG("Fetched instruction: 0x%02hhX", instr);

@@ -55,6 +55,7 @@ static struct option i8e8e_options[] = {
         { "PC",             required_argument,  0,  kI8e8eOptAlternatePC },
         { "sp",             required_argument,  0,  'S' },
         { "SP",             required_argument,  0,  kI8e8eOptAlternateSP },
+        { "2mhz",           no_argument,        0,  '2' },
         { "file-device",    required_argument,  0,  'f' },
         { "tty",            required_argument,  0,  't' },
         { "timers",         required_argument,  0,  'T' },
@@ -99,6 +100,10 @@ usage(
             "                                   to this address (default: $0000)\n"
             "    -S/--sp/--SP <addr>            on start, set the stack pointer (SP)\n"
             "                                   to this address (default: $0000)\n"
+            "    -2/--2mhz                      limit the instruction dispatch rate to\n"
+            "                                   a clock frequency of 2 MHz; without this\n"
+            "                                   flag instructions are dispatched as fast\n"
+            "                                   as possible\n"
             "    -f/--file-device <file-dev>    connect a file to the device bus of the\n"
             "                                   emulator\n"
             "    -t/--tty <tty-options>         configure TTY options\n"
@@ -414,7 +419,9 @@ main(
     I8e8eROMMappingMode_t       rom_mapmode = kI8e8eROMMappingModeAlloc;
     I8e8eFileDeviceObj_t        *filedevobjs = NULL, *filedevobjs_tail = NULL;
     I8080Addr_t                 timer_addr;
+    I8080TimerContextPtr        timer = NULL;
     bool                        have_timer;
+    bool                        have_2mhz = false;
     char                        *str;
     
     signal(SIGINT, handle_sigint);
@@ -534,6 +541,10 @@ main(
                 }
                 break;
             
+            case '2':
+                have_2mhz = true;
+                break;
+            
             case 't':
                 if ( ! I8080DeviceTTYOptsParse(optarg, &tty_in_opts, &tty_out_opts) ) exit(EINVAL);
                 break;
@@ -588,7 +599,10 @@ main(
                                         
     // Allocate the system so we have the device bus and
     // memory subsystem available:
-    sys8080 = I8080SystemCreateWithTTYContext(0, 0, &tty_context);
+    sys8080 = I8080SystemCreateWithTTYContext(
+                    have_2mhz ? kI8080SystemOpts2MHzClock : 0,
+                    0,
+                    &tty_context);
     
     if ( ! sys8080 ) {
         ERROR("Failed to allocate base system");
@@ -713,11 +727,10 @@ main(
     
     // Realtime timer?
     if ( have_timer ) {
-        I8080TimerContextPtr    timer = I8080TimerContextCreate(sys8080);
         I8080MemMapperRef_t     mapper_data = { .addr_range = I8080AddrRangeCreate(timer_addr, 0x0100),
-                                                .callbacks = *I8080TimerMapperCallbacks,
-                                                .context = timer };
-                
+                                                .callbacks = *I8080TimerMapperCallbacks };
+        timer = I8080TimerContextCreate(sys8080);
+        mapper_data.context = timer;
         if ( ! I8080MemRegisterMapper(sys8080->sysmem, &mapper_data) ) {
             exit(EINVAL);
         }
@@ -784,12 +797,13 @@ main(
     INFO("Running with program counter (PC) set to $%04hX", PC);
     I8080SystemRun(sys8080, PC);
     
-    I8080CGAShutdown();
-    
     printf("\n");
     I8080RegistersPrint(stdout, &sys8080->rgstrs);
     I8080DevBusPrint(stdout, sys8080->devbus);
     I8080MemPrint(stdout, sys8080->sysmem);
+    if ( timer ) I8080TimerContextPrint(stdout, timer);
+    
+    I8080CGAShutdown();
     
     I8080SystemSetPowerState(sys8080, false);
     I8080SystemDestroy(sys8080);

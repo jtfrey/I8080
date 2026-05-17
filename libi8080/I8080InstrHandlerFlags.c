@@ -54,13 +54,13 @@ I8080InstrDispatchFlagsINTE(
 )
 {
     if ( I8080InstrExt(instr, 3, 3) == 0 ) {
-        // EI
-        sys8080->rgstrs.INTE = 0b1;
-        DEBUG("Set interrupt enable");
-    } else {
         // DI
         sys8080->rgstrs.INTE = 0b0;
         DEBUG("Reset interrupt enable");
+    } else {
+        // EI
+        sys8080->rgstrs.INTE = 0b1;
+        DEBUG("Set interrupt enable");
     }
     return 4;
 }

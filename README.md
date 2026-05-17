@@ -105,6 +105,78 @@ Each individual cell of the graphics array occupies a byte of memory starting at
 
 Display elements are ordered in row-major format:  display elements of the first row occupy a sequence of bytes matching the width of the display (which can be determined using the `width` register), followed by the second row, through the height of the display (which can be determined using the `height` register).
 
+#### Realtime clock
+
+I can recall going to a Hershey Apple Core user group auction when I was a teenager.  For a few dollars I bought a gigantic expansion card that I gathered would expand the memory in my Laser 128, provider better graphics, and even give the computer a realtime clock!  I dutifully slid the card into the expansion slot and was rewarded with...nothing.  Looking back, I'm pretty sure it was meant for a PC and someone got a little creative with their salesmanship (and I was a tad naive, too).
+
+Today, having a clock built-in to your computer, TV, phone, microwave, refrigerator, etc. is just expected.  So why not expect to have on available as an add-on in an 8080 emulator?  Like the CGA library, the Timer library implements a memory mapper that occupies a single page of address space.
+
+##### Registers
+
+In the first 16 bytes of the mapped page the Timer provides a series of read-only registers.  This discussion assumes the mapper has been associated with the page at `$DF00`.
+
+| Index | Addr | Name | Description |
+| :---: | :--: | :--- | :---------- |
+| `0`   | `$DF00` | `S` | (Read-only) current clock second |
+| `1`   | `$DF01` | `M` | (Read-only) current clock minute |
+| `2`   | `$DF02` | `H` | (Read-only) current clock hour (0-23) |
+| `3`   | `$DF03` | `d` | (Read-only) current day of the month |
+| `4`   | `$DF04` | `m` | (Read-only) current month (1-12) |
+| `5`   | `$DF05` | `Y` | (Read-only) current 2-digit year (2026 = 26) |
+| `6`   | `$DF06` | `Ycent` | (Read-only) current century (2026 = 20)  |
+| `7`   | `$DF07` | `fired` | (Read-only) last timer index that elapsed ("fired") |
+
+##### Timers
+
+The main reason this mapper was created was to provide programs running in the emulator with realtime timer functionality.  There are eight distinct timers available, starting at offset `$10` from the base of the page.  A timer occupies 8 bytes of space, so timer 0 is found at offset `$10`, timer 1 at `$18`, timer 2 at `$20`, etc.
+
+Each timer consists of a series of read/write registers:
+
+| Index | Addr | Name | Description |
+| :---: | :--: | :--- | :---------- |
+| `0`   | `$DFXY` | `enable` | Enablement state of the timer |
+| `1`   | `$DFXY` | `opcode` | Opcode to raise with the CPU when the timer elapses |
+| `2`   | `$DFXY` | `msecFrac` | Fractional milliseconds (as an 8-bit, 8-digit mantissa fixed-point value) |
+| `3`   | `$DFXY` | `msecWholeB0` | LSB of the 32-bit whole millisecond count |
+| `4`   | `$DFXY` | `msecWholeB1` |    : |
+| `5`   | `$DFXY` | `msecWholeB2` |    : |
+| `6`   | `$DFXY` | `msecWholeB3` | MSB of the 32-bit whole millisecond count |
+
+Where `X` is {1, 2, 3, 4} and `Y` is {0, 1, 2, 3, 4, 5, 6, 8, 9, A, B, C, D, E}, dependent on the timer index.
+
+The timer interval is expressed as a 32-bit number of whole milliseconds and a fractional fixed-point component.  For example, an interval of 12000.5 milliseconds is:
+
+`
+12000 + 0.5 ms
+= 0x00002EE0 + (0.5 * 256) ms
+= 0x00002EE0 + 0x80
+`
+
+The `enable` register of each timer is initialized to `$00` at boot, corresponding to the unused state:  no resources are configured yet.  Incrementing to `$01` provisions the timer but does not start it; incrementing to `$02` starts the timer.  Once the timer elapses it "fires" and the `opcode` is delivered to the CPU.  The `RST #` opcodes are typically used since they are a single byte but actually accomplish something.  Another candidate would be `EI` to simply reenable interrupts.
+
+With `enable` of `$02`, once the timer elapses it will return to `$01`.  For timers that should reenable automatically after elapsing, `$82` should be written to the `enable` register.
+
+The following code sets timer `$02` for a 12000.5 ms interval, to elapse just once, and send the `EI` opcode:
+
+```
+        lxi     hl, 0DF26   ; start at the msecWholeB3 register
+        mvi     m, 00h      ;
+        dcr     l           ; decrement HL to write to msecWholeB2
+        mvi     m, 00h      ;
+        dcr     l           ; decrement HL to write to msecWholeB1
+        mvi     m, 02eh     ;
+        dcr     l           ; decrement HL to write to msecWholeB0
+        mvi     m, 0e0h     ;
+        dcr     l           ; decrement HL to write to msecFrac
+        mvi     m, 080h     ;
+        dcr     l           ; decrement HL to write to opcode
+        mvi     m, 0fbh     ; EI = $FB
+        dcr     l           ; decrement HL to write to enable
+        mvi     m, 02h      ; enable <= 2 ("on")
+```
+
+A more-complex example is discussed in a later section.
+
 ### Device bus
 
 To allow the emulator to interface with devices, an API was created wherein a device is implemented as a data structure and callback functions:
@@ -418,4 +490,57 @@ $ cat benchmark-32.log| awk -F , '{cyc+=$4;s+=$5;n++;}END{printf("%g cyc, %g µs
 
 With the data [graphed](examples/multiply/multiply-threshold.png), a threshold of 21 appears to have the best overall performance.
 
+### More-complex timer usage
 
+A [more-complex example](examples/timers/timers.asm) sets the timer to auto-reenable and uses a `RST 1` opcode to execute a subroutine when the timer elapses.  It allows for three timer intervals and then exits:
+
+```
+$ time ./i8e8e -L timers.bin@0x400 -T 0xDF00 -t i-all -P 0x400 --2mhz
+
+Please wait for three timer intervals to elapse...
+12000.5 ms has elapsed
+12000.5 ms has elapsed
+12000.5 ms has elapsed
+
+ ____________________________________________________________________________________________
+| [B]=[0x00|0  |0   | ] [C]=[0x00|0  |0   | ]   [BC]=[0x0000|0    |0     ]         A       C |
+| [D]=[0x00|0  |0   | ] [E]=[0x00|0  |0   | ]   [DE]=[0x0000|0    |0     ]   S Z - C - P - Y |
+| [H]=[0x04|4  |4   | ] [L]=[0x74|116|116 |t]   [HL]=[0x0474|1140 |1140  ]   =============== |
+| [F]=[0x40|64 |64  |@] [A]=[0x00|0  |0   | ]  [PSW]=[0x4000|16384|16384 ]   0 1 0 0 0 0 1 0 |
+|                                               [PC]=[0x0440|1088 |1088  ]                   |
+| [CYCLS]=[0x00000440E08D][     35680 ms]       [SP]=[0x0000|0    |0     ]           [*]INTE |
+|____________________________________________________________________________________________|
+I8080Device[$00] [←0x00000000|0x00000079→] BYTES  "tty"
+I8080Device[$FF] [           |0x00000000→] BYTES  "stderr"
+I8080Mem[$0000..$00FF] : allocated RAM
+I8080Mem[$0100..$03FF] : unused
+I8080Mem[$0400..$04FF] : allocated RAM
+I8080Mem[$0500..$DEFF] : unused
+I8080Mem[$DF00..$DFFF] : mapper 0x6000020c8058 "realtime-timers"
+I8080Mem[$E000..$FEFF] : unused
+I8080Mem[$FF00..$FFFF] : allocated RAM
+I8080Timer:
+  [$00] |- 0x15 (21)
+  [$01] |- 0x0F (15)
+  [$02] |- 0x00 (0)
+  [$03] |- 0x11 (17)
+  [$04] |- 0x05 (5)
+  [$05] |- 0x1A (26)
+  [$06] |- 0x14 (20)
+  [$07] |- 0x02 (2)
+        |- TIMERS:
+  [$10]     |- 0: unused
+  [$18]     |- 1: unused
+  [$20]     |- 2: 12000.500 ms, auto-reenable (opcode: 0xCF)
+  [$28]     |- 3: unused
+  [$30]     |- 4: unused
+  [$38]     |- 5: unused
+  [$40]     |- 6: unused
+  [$48]     |- 7: unused
+
+./i8e8e -L timers.bin@0x400 -T 0xDF00 -t i-all -P 0x400 --2mhz  2.00s user 7.47s system 26% cpu 36.013 total
+```
+
+The command line shows the `--2mhz` flag's being used to limit the emulator to the 2 MHz clock speed of which the 8080 was capable.  The total elapsed time of 36 seconds matches well with the 35680 ms of emulated CPU time.
+
+One caveat to emulation of interrupts is when an `IN #` instruction is blocking, waiting on i/o.  If a timer elapses and fires while the i/o is blocking the interrupt will be raised but will wait until the currently-executing `IN #` instruction completes.  This didn't occur to me until I at first put a "please press any key" pause in the program and didn't understand why interrupts weren't being processed — until I *did* press a key!

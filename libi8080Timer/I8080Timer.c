@@ -416,7 +416,7 @@ I8080TimerContextPrint(
 {
     int                     i;
     
-    I8080TimerContextDateTimeFill(systime);
+    I8080TimerContextDateTimeFill(I8080TimerContextDateTimeNow(systime));
     fprintf(stream, "I8080Timer:\n"
                     "  [$%1$02lX] |- 0x%2$02hhX (%2$u)\n"
                     "  [$%3$02lX] |- 0x%4$02hhX (%4$u)\n"
