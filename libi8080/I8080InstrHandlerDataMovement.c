@@ -34,7 +34,7 @@ I8080InstrDispatchDataMovementMov(
         case kI8080InstrRegisterL:
         case kI8080InstrRegisterA: {
             byte = sys8080->rgstrs.R[I8080RgstrIdx(src)];
-            DEBUG("Loaded byte 0x%02hhX from register %d", byte, I8080InstrRegisterNames[src]);
+            DEBUG("Loaded byte 0x%02hhX from register %s", byte, I8080InstrRegisterNames[src]);
             break;
         }
         case kI8080InstrRegisterMem: {

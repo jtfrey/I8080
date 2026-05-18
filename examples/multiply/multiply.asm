@@ -94,60 +94,66 @@ mltalg2_2:      push        psw         ; save A
 ; algorithm is used; otherwise, factors of 2 is
 ; employed.
 ;
-mltalg3:        push        psw         ; we'll clobber all registers
+mltalg3:        push        psw                 ; we'll clobber all registers
                 push        bc
                 push        hl
-                mov         a, d        ; A <- D
+                mov         a, d                ; A <- D
                 cmp         e
-                jp          swap        ; D >= E
-                jc          choosealg   ; D < E
-swap:           mov         a, e        ; E is the smaller value
-                mov         e, d        ; swap D into E
+                jp          mltalg3_swap        ; D >= E
+                jc          mltalg3_chsalg      ; D < E
+mltalg3_swap:   mov         a, e                ; E is the smaller value
+                mov         e, d                ; swap D into E
                 ;
                 ; At this point the multipler is in A
                 ; and the multiplicand is in E
-choosealg:      mvi         d, 0h       ; DE contains the 16-bit
-                                        ; multiplicand now
+mltalg3_chsalg: mvi         d, 0h               ; DE contains the 16-bit
+                                                ; multiplicand now
 
-                mvi         h, 0h       ; HL <- 0000h
+                mvi         h, 0h               ; HL <- 0000h
                 mvi         l, 0h
-                cpi         ADDTHRESH   ; is our multiplier < 16?
-                jp          fctr2       ; >= 16
-                jc          repaddalg   ; < 16 (when A has bit 7 set)
+                cpi         ADDTHRESH           ; is our multiplier < 16?
+                jp          mltalg3_fctr2       ; >= 16
+                jc          mltalg3_repaddalg   ; < 16 (when A has bit 7 set)
                 
-fctr2:          push        psw
-                mvi         a, '2'
-                out         0
-                pop         psw
-                mvi         b, 8        ; now use D as our loop counter
-nextfactor:     rar                     ; A >> 1 -> carry
-                jnc         rotmltplcnd ; do not add this factor
-                dad         de          ; HL += DE
-rotmltplcnd:    push        psw         ; save A
-                xra         a           ; clear carry
+mltalg3_fctr2:  ;push        psw
+                ;mvi         a, '2'
+                ;out         0
+                ;pop         psw
+                mvi         b, 8                ; now use D as our loop counter
+mltalg3_fctr2nxt:
+                rar                             ; A >> 1 -> carry
+                jnc         mltalg3_rotmltplcnd ; do not add this factor
+                dad         de                  ; HL += DE
+mltalg3_rotmltplcnd:
+                push        psw                 ; save A
+                xra         a                   ; clear carry
                 mov         a, e
-                ral                     ; carry <- E << 1
+                ral                             ; carry <- E << 1
                 mov         e, a
                 mov         a, d
-                ral                     ; D << 1 <- carry
-                mov         d, a        ; thus, DE = DE * 2
-                pop         psw         ; restore A (the shifted multiplier)
-                dcr         b           ; decrement counter and
-                jp          nextfactor  ; go do another round
-                jmp         mltplyexit
+                ral                             ; D << 1 <- carry
+                mov         d, a                ; thus, DE = DE * 2
+                pop         psw                 ; restore A (the shifted multiplier)
+                dcr         b                   ; decrement counter and
+                jp          mltalg3_fctr2nxt    ; go do another round
+                jmp         mltalg3_exit
 
-repaddalg:      push        psw
-                mvi         a, 'A'
-                out         0
-                pop         psw
+mltalg3_repaddalg:
+                ;push        psw
+                ;mvi         a, 'A'
+                ;out         0
+                ;pop         psw
                 inr         a
-repaddnext:     dcr         a
-                jz          mltplyexit
+mltalg3_repaddnxt:
+                dcr         a
+                jz          mltalg3_exit
                 dad         de
-                jmp         repaddnext
+                jmp         mltalg3_repaddnxt
                 
-mltplyexit:     xchg                    ; DE <=> HL
-                pop         hl          ; restore clobbered registers
-                pop         bc          ; and return with the product
-                pop         psw         ; in DE
+mltalg3_exit:   xchg                            ; DE <=> HL
+                pop         hl                  ; restore clobbered registers
+                pop         bc                  ; and return with the product
+                pop         psw                 ; in DE
                 ret
+mltalg3_end:
+

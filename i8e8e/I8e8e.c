@@ -420,7 +420,7 @@ main(
     I8e8eFileDeviceObj_t        *filedevobjs = NULL, *filedevobjs_tail = NULL;
     I8080Addr_t                 timer_addr;
     I8080TimerContextPtr        timer = NULL;
-    bool                        have_timer;
+    bool                        have_timer = false;
     bool                        have_2mhz = false;
     char                        *str;
     
