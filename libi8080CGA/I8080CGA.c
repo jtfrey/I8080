@@ -309,7 +309,7 @@ I8080CGAContextWrite(
             case kI8080CGARegisterOp:
                 cga->rgstrs.op = byte;
                 if ( (cga->rgstrs.op & kI8080CGAOpFill) == kI8080CGAOpFill ) {
-                    chtype          row[cga->rgstrs.width], ch = ((I8080CGAReadChCallback)cga->wch)(cga->rgstrs.op & 0x7f);
+                    chtype          row[cga->rgstrs.width], ch = cga->wch(cga->rgstrs.op & 0x7f);
                     int             y;
                     
                     /* Fill the row: */
@@ -337,8 +337,8 @@ I8080CGAContextWrite(
                             if ( I8080CGAMapperDrawNow(cga->status) ) {
                                 redrawwin(cga->public.wndw);
                             }
-                            mvwaddch(cga->public.wndw, cga->rgstrs.y, 0, 0);
-                            for ( x = 1; x < cga->rgstrs.width; x++ ) waddch(cga->public.wndw, 0);
+                            mvwaddch(cga->public.wndw, cga->rgstrs.y, 0, cga->wch(0));
+                            for ( x = 1; x < cga->rgstrs.width; x++ ) waddch(cga->public.wndw, cga->wch(0));
                             if ( I8080CGAMapperDrawNow(cga->status) ) {
                                 wnoutrefresh(cga->public.wndw);
                                 doupdate();
@@ -352,7 +352,69 @@ I8080CGAContextWrite(
                                 redrawwin(cga->public.wndw);
                             }
                             for ( y = 0; y < cga->rgstrs.height; y++ )
-                                mvwaddch(cga->public.wndw, y, cga->rgstrs.x, 0);
+                                mvwaddch(cga->public.wndw, y, cga->rgstrs.x, cga->wch(0));
+                            if ( I8080CGAMapperDrawNow(cga->status) ) {
+                                wnoutrefresh(cga->public.wndw);
+                                doupdate();
+                            }
+                            break;
+                        }
+                        case kI8080CGAOpClearRows: {
+                            int         x, n = cga->rgstrs.i;
+                            
+                            if ( I8080CGAMapperDrawNow(cga->status) ) {
+                                redrawwin(cga->public.wndw);
+                            }
+                            while ( n-- ) {
+                                mvwaddch(cga->public.wndw, cga->rgstrs.y + n, 0, cga->wch(0));
+                                for ( x = 1; x < cga->rgstrs.width; x++ ) waddch(cga->public.wndw, cga->wch(0));
+                            }
+                            if ( I8080CGAMapperDrawNow(cga->status) ) {
+                                wnoutrefresh(cga->public.wndw);
+                                doupdate();
+                            }
+                            break;
+                        }
+                        case kI8080CGAOpClearCols: {
+                            int         y, n = cga->rgstrs.i;
+                            
+                            if ( I8080CGAMapperDrawNow(cga->status) ) {
+                                redrawwin(cga->public.wndw);
+                            }
+                            while ( n-- ) {
+                                for ( y = 0; y < cga->rgstrs.height; y++ )
+                                    mvwaddch(cga->public.wndw, y, cga->rgstrs.x + n, cga->wch(0));
+                            }
+                            if ( I8080CGAMapperDrawNow(cga->status) ) {
+                                wnoutrefresh(cga->public.wndw);
+                                doupdate();
+                            }
+                            break;
+                        }
+                        case kI8080CGAOpFillRow: {
+                            int         x;
+                            chtype      c = cga->wch(cga->rgstrs.i);
+                            
+                            if ( I8080CGAMapperDrawNow(cga->status) ) {
+                                redrawwin(cga->public.wndw);
+                            }
+                            mvwaddch(cga->public.wndw, cga->rgstrs.y, 0, c);
+                            for ( x = 1; x < cga->rgstrs.width; x++ ) waddch(cga->public.wndw, c);
+                            if ( I8080CGAMapperDrawNow(cga->status) ) {
+                                wnoutrefresh(cga->public.wndw);
+                                doupdate();
+                            }
+                            break;
+                        }
+                        case kI8080CGAOpFillCol: {
+                            int         y;
+                            chtype      c = cga->wch(cga->rgstrs.i);
+                            
+                            if ( I8080CGAMapperDrawNow(cga->status) ) {
+                                redrawwin(cga->public.wndw);
+                            }
+                            for ( y = 0; y < cga->rgstrs.height; y++ )
+                                mvwaddch(cga->public.wndw, y, cga->rgstrs.x, c);
                             if ( I8080CGAMapperDrawNow(cga->status) ) {
                                 wnoutrefresh(cga->public.wndw);
                                 doupdate();
@@ -367,10 +429,10 @@ I8080CGAContextWrite(
                                 if ( I8080CGAMapperDrawNow(cga->status) ) {
                                     redrawwin(cga->public.wndw);
                                 }
-                                mvwaddch(cga->public.wndw, cga->rgstrs.y, cga->rgstrs.x, ((I8080CGAReadChCallback)cga->wch)(b));
+                                mvwaddch(cga->public.wndw, cga->rgstrs.y, cga->rgstrs.x, cga->wch(b));
                                 while ( --cga->rgstrs.i ) {
                                     b = I8080MemRead(mem, addr++);
-                                    waddch(cga->public.wndw, ((I8080CGAReadChCallback)cga->wch)(b));
+                                    waddch(cga->public.wndw, cga->wch(b));
                                 }
                                 if ( I8080CGAMapperDrawNow(cga->status) ) {
                                     wnoutrefresh(cga->public.wndw);
@@ -389,9 +451,9 @@ I8080CGAContextWrite(
                                 if ( I8080CGAMapperDrawNow(cga->status) ) {
                                     redrawwin(cga->public.wndw);
                                 }
-                                mvwaddch(cga->public.wndw, cga->rgstrs.y, cga->rgstrs.x, ((I8080CGAReadChCallback)cga->wch)(b));
+                                mvwaddch(cga->public.wndw, cga->rgstrs.y, cga->rgstrs.x, cga->wch(b));
                                 while ( (b = I8080MemRead(mem, addr++)) ) {
-                                    waddch(cga->public.wndw, ((I8080CGAReadChCallback)cga->wch)(b));
+                                    waddch(cga->public.wndw, cga->wch(b));
                                 }
                                 if ( I8080CGAMapperDrawNow(cga->status) ) {
                                     wnoutrefresh(cga->public.wndw);

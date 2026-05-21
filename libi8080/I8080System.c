@@ -214,6 +214,26 @@ I8080SystemRaiseInterrupt(
 
 //
 
+void
+I8080SystemSetStall(
+    I8080SystemPtr  sys8080,
+    bool            should_stall
+)
+{
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+    pthread_mutex_lock(&sys8080->interrupt.lock);
+#endif
+    if ( I8080SystemIsRunning(sys8080->state) ) {
+        if ( should_stall ) sys8080->state |= kI8080SystemStateStall;
+        else                sys8080->state &= ~kI8080SystemStateStall;
+    }
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+    pthread_mutex_unlock(&sys8080->interrupt.lock);
+#endif
+}
+
+//
+
 bool
 I8080SystemSetPC(
     I8080SystemPtr  sys8080,
@@ -253,28 +273,46 @@ I8080SystemStep(
             sys8080->last_cycle = I8080MicrosecondsMakeNow();
             INFO("System transitioned to running state");
         }
-        
+        if ( (sys8080->state & kI8080SystemStateStall) == 0 ) {
 #ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
-        pthread_mutex_lock(&sys8080->interrupt.lock);
-        
-        if ( sys8080->interrupt.is_raised ) {
-            instr = sys8080->interrupt.opcode;
-            DEBUG("Interrupt instruction: 0x%02hhX", instr);
-            sys8080->interrupt.is_raised = false;
-        } else {
+            pthread_mutex_lock(&sys8080->interrupt.lock);
+            
+            if ( sys8080->interrupt.is_raised ) {
+                instr = sys8080->interrupt.opcode;
+                DEBUG("Interrupt instruction: 0x%02hhX", instr);
+                sys8080->interrupt.is_raised = false;
+            } else {
+                instr = I8080InstrFetch(sys8080);
+                DEBUG("Fetched instruction: 0x%02hhX", instr);
+            }
+            
+            pthread_mutex_unlock(&sys8080->interrupt.lock);
+#else
             instr = I8080InstrFetch(sys8080);
             DEBUG("Fetched instruction: 0x%02hhX", instr);
-        }
-        
-        pthread_mutex_unlock(&sys8080->interrupt.lock);
-#else
-        instr = I8080InstrFetch(sys8080);
-        DEBUG("Fetched instruction: 0x%02hhX", instr);
 #endif
-        if ( sys8080->itbl.dispatchers[instr] ) {
-            elapsed = sys8080->itbl.dispatchers[instr](sys8080, instr);
-            sys8080->rgstrs.CYCLS += elapsed;
-            
+            if ( sys8080->itbl.dispatchers[instr] ) {
+                elapsed = sys8080->itbl.dispatchers[instr](sys8080, instr);
+                sys8080->rgstrs.CYCLS += elapsed;
+                
+                if ( sys8080->options & kI8080SystemOpts2MHzClock ) {
+                    I8080Microseconds   now = I8080MicrosecondsMakeNow(),
+                                        dt = (sys8080->last_cycle + (double)elapsed * 0.5) - now;
+                    
+                    if ( dt > 0.0 ) {
+                        DEBUG("Sleeping for %.3f µs to fix clockspeed", dt);
+                        I8080TimingSleep(dt);
+                        now += dt;
+                    }
+                    sys8080->last_cycle = now;
+                }
+                ok = true;
+            } else {
+                // Stop running the program and indicate an invalid opcode was encountered:
+                sys8080->state = kI8080SystemStateOn | kI8080SystemStateBadInstr;
+                ERROR("An illegal instruction (0x%02hhX) was encountered", instr);
+            }
+        } else {
             if ( sys8080->options & kI8080SystemOpts2MHzClock ) {
                 I8080Microseconds   now = I8080MicrosecondsMakeNow(),
                                     dt = (sys8080->last_cycle + (double)elapsed * 0.5) - now;
@@ -286,11 +324,6 @@ I8080SystemStep(
                 }
                 sys8080->last_cycle = now;
             }
-            ok = true;
-        } else {
-            // Stop running the program and indicate an invalid opcode was encountered:
-            sys8080->state = kI8080SystemStateOn | kI8080SystemStateBadInstr;
-            ERROR("An illegal instruction (0x%02hhX) was encountered", instr);
         }
         if ( cycles ) *cycles = elapsed;
     }

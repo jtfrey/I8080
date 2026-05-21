@@ -14,6 +14,7 @@
 #include "I8e8eMemObj.h"
 #include "I8e8eFileDeviceObj.h"
 #include "I8080CGA.h"
+#include "I8080PPU.h"
 #include "I8080Timer.h"
 #include <fcntl.h>
 #include <signal.h>
@@ -60,6 +61,7 @@ static struct option i8e8e_options[] = {
         { "tty",            required_argument,  0,  't' },
         { "timers",         required_argument,  0,  'T' },
         { "cga",            required_argument,  0,  'c' },
+        { "ppu",            required_argument,  0,  'g' },
         { "list-palettes",  no_argument,        0,  'p' },
         { NULL,             0,                  0,   0  }
     };
@@ -69,7 +71,7 @@ static const char *i8e8e_options_str =
 #ifdef HAS_MMAP
         "m:"
 #endif
-        "U:P:S:f:t:T:c:p";
+        "U:P:S:f:t:T:c:g:p";
 
 void
 usage(
@@ -108,7 +110,10 @@ usage(
             "                                   emulator\n"
             "    -t/--tty <tty-options>         configure TTY options\n"
             "    -T/--timers <timers-options>   configure realtime timers\n"
-            "    -c/--cga <cga-options>         configure a Curses Graphics Adapter\n"
+            "    -c/--cga <cga-options>         configure a Curses Graphics Adapter...\n"
+            "    -g/--ppu <ppu-options>         ...or configure a Picture Processing Unit\n"
+            "    -p/--list-palettes             list the available CGA color palettes\n"
+            "                                   then exit\n"
             "\n"
             "    <addr> = ( $XXXX | 0xXXXX | 0N… | N… )\n\n"
             "        The emulator features a 64 KiB address space.  Addresses can be\n"
@@ -177,6 +182,17 @@ usage(
             "        by providing a <w> and <h> (width and height) and optionally the origin\n"
             "        of the resulting window, (<x>, <y>).\n"
             "\n"
+            "    <ppu-options> = @<addr>{:<palette-id>}\n"
+            "        Create a curses-based Picture Processing Unit that will be mapped at\n"
+            "        memory location <addr>.  The PPU and CGA memory mappers are mutually\n"
+            "        exclusive.  The first 16-bytes of the PPU function as 8-bit registers\n"
+            "        for control and feedback.  The remainder of the 1 KiB of address space\n"
+            "        is split between palette, tile, and sprite tables and two tile maps.\n"
+            "        See the programmer's manual for more information.  This library reuses\n"
+            "        the CGA color palette functionality, so the rendering of the tiles and\n"
+            "        sprites usually requires a specific <palette-id> be used.  The default\n"
+            "        is the kI8080CGAPaletteNES2C02 palette.\n"
+            "\n"
             "  environment variables:\n\n"
             "    I8E8E_VERBOSITY        the initial logging level; any abbreviation of\n\n"
             "                             critical, error, warning, info, debug\n\n"
@@ -188,6 +204,51 @@ usage(
             exe,
             I8080VersionString
         );
+}
+
+//
+
+typedef struct {
+    I8080Addr_t                 base_addr;
+    I8080CGAPaletteId_t         palette_id;
+    I8080PPUMapperContextPtr    context;
+} I8e8ePPU_t;
+
+bool
+I8e8ePPUParse(
+    const char      *in_str,
+    I8e8ePPU_t      *out_ppu
+)
+{
+    const char      *in_str_orig = in_str;
+    const char      *s_end;
+    
+    // Better start with an '@':
+    if ( *in_str != '@' ) {
+        ERROR("Invalid PPU specification: %s", in_str_orig);
+        return false;
+    }
+    
+    // Parse the address string:
+     ++in_str;
+    if ( ! I8080AddrParse(in_str, &out_ppu->base_addr, &s_end) ) {
+        ERROR("Invalid PPU mapping address: %s", in_str_orig);
+        return false;
+    }
+    
+    // The next character must be a NUL or in the options set "#/:"
+    out_ppu->palette_id = kI8080CGAPaletteNES2C02;
+    if ( *s_end && ((*s_end != ':') || ! I8080CGAPaletteIdParse(++s_end, &out_ppu->palette_id, &s_end)) ) {
+        ERROR("Invalid PPU palette id: %s", in_str_orig);
+        ERROR("                        %*s^", (s_end - in_str_orig), "");
+        return false;
+    }
+    if ( *s_end ) {
+        ERROR("Invalid PPU mapping: %s", in_str_orig);
+        ERROR("                     %*s^", (s_end - in_str_orig), "");
+        return false;
+    }
+    return true;
 }
 
 //
@@ -415,6 +476,8 @@ main(
     I8080Addr_t                 SP = 0x0000, PC=0x0000;
     I8e8eCGA_t                  cga;
     bool                        has_cga = false;
+    I8e8ePPU_t                  ppu;
+    bool                        has_ppu = false;
     I8e8eMemObj_t              *memobjs = NULL, *memobjs_tail = NULL;
     I8e8eROMMappingMode_t       rom_mapmode = kI8e8eROMMappingModeAlloc;
     I8e8eFileDeviceObj_t        *filedevobjs = NULL, *filedevobjs_tail = NULL;
@@ -577,6 +640,12 @@ main(
                 break;
             }
             
+            case 'g': {
+                if ( ! I8e8ePPUParse(optarg, &ppu) ) exit(EINVAL);
+                has_ppu = true;
+                break;
+            }
+            
             case 'p': {
                 I8080CGAPaletteId_t     palette_id = kI8080CGAPaletteIdDefault;
                 
@@ -589,6 +658,11 @@ main(
                 exit(0);
             }
         }
+    }
+    
+    if ( has_ppu && has_cga ) {
+        ERROR("CGA and PPU memory mapped devices cannot be used together");
+        exit(EINVAL);
     }
     
     // Static stuff:
@@ -703,15 +777,15 @@ main(
     // Was CGA requested?
     if ( has_cga ) {
         I8080CGAMapperContextPtr    cga_context;
-        I8080MemMapperRef_t         mapper_data = { .callbacks = *I8080CGAMapperCallbacks };
+        I8080MemMapperRef_t         cga_mapper = { .callbacks = *I8080CGAMapperCallbacks };
         
         if ( cga.has_dims ) {
             cga_context = I8080CGAMapperContextCreateWithOriginAndSize(cga.mode, cga.x, cga.y, cga.w, cga.h);
         } else {
             cga_context = I8080CGAMapperContextCreateWithWindow(cga.mode, NULL);
         }
-        mapper_data.addr_range = I8080AddrRangeCreate(cga.base_addr, cga_context->n_pages_required << 8);
-        mapper_data.context = cga_context;
+        cga_mapper.addr_range = I8080AddrRangeCreate(cga.base_addr, cga_context->n_pages_required << 8);
+        cga_mapper.context = cga_context;
         if ( cga_context->n_pages_required > I8e8eCGASoftPageLimit ) {
             WARNING("CGA adapter requires $%02hX pages of memory", cga_context->n_pages_required);
         }
@@ -720,18 +794,31 @@ main(
             exit(ENOMEM);
         }
         cga_context->color_palette = I8080CGAPalettes[cga.palette_id];
-        if ( ! I8080MemRegisterMapper(sys8080->sysmem, &mapper_data) ) {
+        if ( ! I8080MemRegisterMapper(sys8080->sysmem, &cga_mapper) ) {
+            exit(EINVAL);
+        }
+    }
+    
+    // Was PPU requested?
+    if ( has_ppu ) {
+        I8080PPUMapperContextPtr    ppu_context;
+        I8080MemMapperRef_t         ppu_mapper = { .callbacks = *I8080PPUMapperCallbacks };
+        
+        ppu_context = I8080PPUMapperContextCreate(sys8080, ppu.palette_id);
+        ppu_mapper.context = ppu_context;
+        ppu_mapper.addr_range = I8080AddrRangeCreate(ppu.base_addr, I8080PPUMapperAddressRangeLength);
+        if ( ! I8080MemRegisterMapper(sys8080->sysmem, &ppu_mapper) ) {
             exit(EINVAL);
         }
     }
     
     // Realtime timer?
     if ( have_timer ) {
-        I8080MemMapperRef_t     mapper_data = { .addr_range = I8080AddrRangeCreate(timer_addr, 0x0100),
-                                                .callbacks = *I8080TimerMapperCallbacks };
+            I8080MemMapperRef_t     timer_mapper = { .addr_range = I8080AddrRangeCreate(timer_addr, 0x0100),
+                                                    .callbacks = *I8080TimerMapperCallbacks };
         timer = I8080TimerContextCreate(sys8080);
-        mapper_data.context = timer;
-        if ( ! I8080MemRegisterMapper(sys8080->sysmem, &mapper_data) ) {
+        timer_mapper.context = timer;
+        if ( ! I8080MemRegisterMapper(sys8080->sysmem, &timer_mapper) ) {
             exit(EINVAL);
         }
     }

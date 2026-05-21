@@ -30,4 +30,5 @@ target_link_libraries(i8e8e
     PRIVATE
         i8080
         i8080CGA
-        i8080Timer)
+        i8080Timer
+        i8080PPU)

@@ -18,11 +18,12 @@
  * A collection of 24bpp (8bpc) color palettes downloaded from
  * https://lospec.com/.
  *
- * The Apple II palettes come from info found via Google.
+ * The Apple II palettes come from info found via Google.  The NES
+ * hardware-specific palettes are the ones used in the Mesen
+ * emulator (https://www.mesen.ca).
  */
 typedef enum {
-    kI8080CGAPaletteIdDefault           = 0,
-    kI8080CGAPaletteIdRealCGA           = kI8080CGAPaletteIdDefault,
+    kI8080CGAPaletteIdRealCGA           = 0,
     kI8080CGAPaletteIdAppleIILoRes      = 1,
     kI8080CGAPaletteIdAppleIIHiRes      = 2,
     kI8080CGAPaletteId4BitRGB           = 3,
@@ -37,8 +38,20 @@ typedef enum {
     kI8080CGAPaletteIdThirtyOne         = 12,   /* Actually "31" on LoSpec */
     kI8080CGAPaletteIdResurrect64       = 13,
     kI8080CGAPaletteIdAAPSplendor       = 14,
-    kI8080CGAPaletteId1BitMonitorGlow   = 15,
-    kI8080CGAPaletteIdMax
+    kI8080CGAPaletteNES2C02             = 15,
+    kI8080CGAPaletteNES2C03             = 16,
+    kI8080CGAPaletteNES2C04_0001        = 17,
+    kI8080CGAPaletteNES2C04_0002        = 18,
+    kI8080CGAPaletteNES2C04_0003        = 19,
+    kI8080CGAPaletteNES2C04_0004        = 20,
+    kI8080CGAPaletteNES2C05_01          = 21,
+    kI8080CGAPaletteNES2C05_02          = 22,
+    kI8080CGAPaletteNES2C05_03          = 23,
+    kI8080CGAPaletteNES2C05_04          = 24,
+    kI8080CGAPaletteNES2C05_05          = 25,
+    kI8080CGAPaletteId1BitMonitorGlow   = 26,
+    kI8080CGAPaletteIdMax,
+    kI8080CGAPaletteIdDefault           = kI8080CGAPaletteIdRealCGA,
 } I8080CGAPaletteId_t;
 
 /**

@@ -93,10 +93,14 @@ Writing the following values to the `op` register will trigger a display operati
 |    `0x01`    | `clear`       | Clear the screen |
 |    `0x02`    | `clearrow`    | Clear the row indicated by the `y` register |
 |    `0x03`    | `clearcol`    | Clear the column indicated by the `x` register |
+|    `0x04`    | `clearrows`   | Clear the `i` rows starting at the `y` register |
+|    `0x05`    | `clearcols`   | Clear the `i` columns starting at the `x` register |
+|    `0x06`    | `fillrow`     | Fill the row indicated by the `y` register with the byte in `i`|
+|    `0x07`    | `fillcol`     | Fill the column indicated by the `x` register with the byte in `i`|
 |    `0x10`    | `writenchars` | The `u16lo` and `u16hi` registers are set to the address of a sequence of bytes/characters; the `i` register is set to the number of bytes/characters; and the `x` and `y` registers indicate the starting coordinate:  write bytes/characters to the display |
 |    `0x11`    | `writecstr`   | The `u16lo` and `u16hi` registers are set to the address of a NUL-terminated sequence of bytescharacters; and the `x` and `y` registers indicate the starting coordinate:  write bytes/characters to the display |
-|    `0x20`    | `getcolorrgb` | The `i` register is set to a color index; the `r`, `g`, and `b` registers will contain the component intensities for the color with that index |
-|    `0x21`    | `setcolorrgb` | The `i` register is set to a color index and the `r`, `g`, and `b` registers are set to the component intensities; the color at index `i` will be set to those values |
+|    `0x7e`    | `getcolorrgb` | The `i` register is set to a color index; the `r`, `g`, and `b` registers will contain the component intensities for the color with that index |
+|    `0x7f`    | `setcolorrgb` | The `i` register is set to a color index and the `r`, `g`, and `b` registers are set to the component intensities; the color at index `i` will be set to those values |
 | `0b1XXXXXXX` | `fill`        | The lower 7-bits of the value will be written to every screen element of the display; for text, this will fill the screen with a single ASCII character; for graphics, the screen will be filled with the given color |
 
 ##### Addressing display elements
@@ -176,6 +180,75 @@ The following code sets timer `$02` for a 12000.5 ms interval, to elapse just on
 ```
 
 A more-complex example is discussed in a later section.
+
+#### Picture Processing Unit (PPU)
+
+The CGA memory mapper device obscures a large region of memory since its 8 bits-per-pixel (BPP) direct backing of on-screen pixels can add up quickly:  an 80x40 display needs 3200 B for that VRAM, or 3.125 KiB or nearly 13 pages.  For higher resolution, like 120x80, the 9600 B occupies 37.5 pages.  Mapped at `$4000`, that's and ending address for the mapper of `$6590`.
+
+In the early days of video gaming RAM was a precious resource, and having that much RAM used for pixel data was expensive.  Much of the pixel data is redundant:  screens full of graphical elements often repeat signifiant patterns.  One device I've tried to understand in-depth is the original NES:  its Picture Processing Unit (PPU) rendered to a 256x240 pixel display — 61440 pixels.  That would be 60 KiB for an 8 BPP format!  Instead, repeatable graphical units — tiles — were drawn to the display on-the-fly.  The 8x8 pixel tiles cut the memory required for a screen full of pixels by 64x:  a 32x30 tile map with an 8-bit tile index is just 960 B.  Tiles used a 2 BPP color index relative to a selected color palette:  16 bytes per tile.  Tile indices were 8-bits, meaning a table was comprised of 256 tiles (4 KiB).  With a tile map producing the background image, animated components were represented by sprites drawn at arbitrary (x,y) coordinates.
+
+So why not take what I know of the NES PPU and use it to add a PPU to my 8080 emulator?  I settled on a fixed screen size of 128x64 pixels; 8x4 tiles (terminal windows pixels are rectangular, longer in the y-direction) with 2 BPP; 8 active color palettes (without restriction on some being for sprites and some for backgrounds); room for 32 of those 8x4 tiles; and room for 52 sprites.  By having just 32 tiles and 8 palettes, every tile reference can be an 8-bit value and there is no need for a separate attribute table for palette selection.  Likewise, sprites and backgrounds can make use of all 8 palettes, not just 4 each as in the NES.
+
+##### Registers
+
+The first 16 bytes of the mapped address region act as registers.  This discussion assumes the mapper has been associated with the page at `$8000`.
+
+| Index | Addr | Name | Description |
+| :---: | :--: | :--- | :---------- |
+| `0`   | `$8000` | `ppu_mode` | Control the rendering functionality of the PPU |
+| `1`   | `$8001` | `ppu_status` | (Read-only) bits set to reflect state of a rendering pass |
+| `2`   | `$8002` | `sprite_offset` | Set to bias the selection of sprites for rendering; useful if the per-line limit has been hit (as reflected by the `ppu_status` from the last pass) |
+| `3`   | `$8003` | `is_rendering` | (Read-only) non-zero when the PPU is rendering, zero when it is not |
+| `4`   | `$8004` | `dma_dst` | DMA copy destination |
+| `5`   | `$8005` | `dma_src_offet` | DMA copy source offset within page |
+| `6`   | `$8006` | `dma_src_page` | DMA copy source page and trigger |
+
+The `ppu_mode` comprises a series of bits:
+
+|  Bits   | Name | Usage |
+| :-----: | :--- | :---- |
+|   `0`   | `map_select` | when set, tile map 1 is drawn; when reset, tile map 0 is drawn (the default) |
+|   `1`   | `render_enable` | master switch for rendering, set = on, reset = off (the default) |
+|   `2`   | `render_background` | enable (1)/disable(0, the default) rendering of background tiles |
+|   `3`   | `render_sprites` | enable (1)/disable(0, the default) rendering of sprites |
+| `4`-`7` | `map_flip_freq_mask` | the integer value of these four bits is used to determine the frequency at which the PPU automatically switches between tile map 0 and 1; i=`0001` means every 2^i render cycles the map switches, in this case every other cycle |
+
+When the system is reset the mode starts with a value of `$00`.  It is up to the user program to enable rendering, etc.
+
+The `ppu_status` holds two bits:
+
+|  Bits   | Name | Usage |
+| :-----: | :--- | :---- |
+|   `6`   | `sprite_overflow` | the renderer clears this bit as a cycle begins and sets it if any row of pixels had more than 16 sprites present and enabled |
+|   `7`   | `sprite_0_hit` | the renderer clears this bit as a cycle begins; if the sprite at index 0 is drawn and an opaque pixel from the sprite overlaps an opaque pixel of the background, this bit is set |
+
+The `sprite_0_hit` probably doesn't have much use in this emulator, since the renderer as currently implemented does not draw pixels on a fixed timing (it really can't, it's at the mercy of curses).  The overflow would typically influence the increment of the `sprite_offset` to bias the selection of higher-index sprites in subsequent rendering cycles.
+
+The DMA feature allows the user program to setup bulk transfers from one region of memory to a region of the PPU.  The `dma_dst` can have the following values:
+
+| Value | Meaning |
+| :---: | :------ |
+|  `0`  | Copy 208 bytes to the sprite table |
+|  `1`  | Copy 256 bytes to the tile table |
+|  `2`  | Copy 256 bytes to tile map 0 |
+|  `3`  | Copy 256 bytes to tile map 1 |
+
+The `dma_dst` and `dma_src_offset` registers should be set and then the `dma_src_page` register can be set, triggering the bulk copy from the page indicated by the byte written to the register.  So setting `dma_dst` to `$02`, `dma_src_offset` to `$00`, then setting `dma_src_page` to `$24` will copy 256 bytes from `$2400` through `$24FF` to tile map 0.  This feature is primarily useful if the program image or a ROM image has prepared data that can easily be loaded into the PPU with a DMA call.  The DMA operation does NOT reset the registers, so altering the data and again writing `$24` to `dma_src_page` will retrigger the same copy.
+
+##### Direct Access
+
+The PPU memory can also be directly accessed by a user program.  Again, assuming the mapper is situated at address `$8000`:
+
+| Address | Bytes | Component |
+| :------ | ----: | :-------- |
+| `$8000` |    16 | The registers |
+| `$8010` |    32 | The 8 color palettes |
+| `$8030` |   208 | The 52 sprites |
+| `$8100` |   256 | The 32 tile definitions |
+| `$8200` |   256 | Tile map 0, upper-left at index 0, row major |
+| `$8300` |   256 | Tile map 1, upper-left at index 0, row major |
+
+Making changes while the renderer is active can have...interesting side effects.  The renderer runs in a separate thread, so the user program could make changes during a rendering cycle!
 
 ### Device bus
 

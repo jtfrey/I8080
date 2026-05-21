@@ -32,10 +32,11 @@ typedef enum {
     kI8080SystemStateOff        = 0b0,      /*!< power off, nothing happening */
     kI8080SystemStateOn         = 0b1,      /*!< power is on, may or may not be running code */
     kI8080SystemStateRunning    = 0b10,     /*!< a program has started running */
-    kI8080SystemStateBreak      = 0b100,    /*!< execution was interrupted */
-    kI8080SystemStateBadInstr   = 0b1000,   /*!< an invalid instruction was encountered */
+    kI8080SystemStateStall      = 0b100,    /*!< when a program is running but the CPU is being used for DMA */
+    kI8080SystemStateBreak      = 0b1000,   /*!< execution was interrupted */
+    kI8080SystemStateBadInstr   = 0b10000,  /*!< an invalid instruction was encountered */
     
-    kI8080SystemStateError      = 0b1100    /*!< all error states */
+    kI8080SystemStateError      = 0b11000   /*!< all error states */
 } I8080SystemState_t;
 
 /**
@@ -209,6 +210,15 @@ void I8080SystemBreak(I8080SystemPtr sys8080);
  * @param interrupt_opcode  the single opcode to be executed
  */
 void I8080SystemRaiseInterrupt(I8080SystemPtr sys8080, I8080Instr_t interrupt_opcode);
+
+/**
+ * Set the CPU to "stall" while DMA operations are happening.
+ *
+ * @param sys8080           the system to stall
+ * @param should_stall      if true, set the stall state, otherwise
+ *                          clear the stall state
+ */
+void I8080SystemSetStall(I8080SystemPtr sys8080, bool should_stall);
 
 /**
  * Set the program counter

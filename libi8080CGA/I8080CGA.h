@@ -63,7 +63,11 @@ typedef enum __attribute__((packed)) {
     kI8080CGAOpNoOp         = 0x00, /*!< zero doesn't do anything... */
     kI8080CGAOpClear        = 0x01, /*!< clear the screen */
     kI8080CGAOpClearRow     = 0x02, /*!< clear the row in .y field */
-    kI8080CGAOpClearCol     = 0x03, /*!< clear the row in .x field */
+    kI8080CGAOpClearCol     = 0x03, /*!< clear the column in .x field */
+    kI8080CGAOpClearRows    = 0x04, /*!< clear .i rows starting at .y */
+    kI8080CGAOpClearCols    = 0x05, /*!< clear .i columns starting at .x */
+    kI8080CGAOpFillRow      = 0x06, /*!< fill the row at .y with the byte in .i */
+    kI8080CGAOpFillCol      = 0x07, /*!< fill the column at .x with the byte in .i */
     
     kI8080CGAOpWriteNChars  = 0x10, /*!< the u16lo/u16hi registers should have the
                                          address of a string of characters; the .i
@@ -73,11 +77,10 @@ typedef enum __attribute__((packed)) {
                                          address of a string of characters; the .x, .y
                                          registers have a screen coordinate */
                                                  
-    kI8080CGAOpGetColorRGB  = 0x20, /*!< fill RGB registers with color .i intensities */
-    kI8080CGAOpSetColorRGB  = 0x21, /*!< set color .i with intensities in RGB registers */
+    kI8080CGAOpGetColorRGB  = 0x7E, /*!< fill RGB registers with color .i intensities */
+    kI8080CGAOpSetColorRGB  = 0x7F, /*!< set color .i with intensities in RGB registers */
     
-    kI8080CGAOpFill         = 0x80, /*!< fill with the ASCII character in the lower
-                                         7 bits of the operation */
+    kI8080CGAOpFill         = 0x80, /*!< fill with the lower 7 bits of the operation */
 } I8080CGAOp_t;
 
 /**
