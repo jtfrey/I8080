@@ -14,6 +14,7 @@
 #define __I8080MEMORY_H__
 
 #include "I8080Config.h"
+#include "I8080TextBuffer.h"
 
 /**
  * Address in memory
@@ -383,6 +384,15 @@ void I8080MemReset(I8080MemRef mem);
  * @param mem           the system memory object
  */
 void I8080MemPrint(FILE *stream, I8080MemRef mem);
+
+/**
+ * Write a summary of the system memory object to a text buffer
+ * Writes a summary of the current configurational state of \p mem
+ * to the text buffer \p tbuff.
+ * @param tbuff         the text buffer to which to write
+ * @param mem           the system memory object
+ */
+void I8080MemWriteToTextBuffer(I8080TextBufferRef tbuff, I8080MemRef mem);
 
 /**
  * Copy external bytes into the system memory object

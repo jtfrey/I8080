@@ -884,16 +884,19 @@ main(
     INFO("Running with program counter (PC) set to $%04hX", PC);
     I8080SystemRun(sys8080, PC);
     
-    printf("\n");
-    I8080RegistersPrint(stdout, &sys8080->rgstrs);
-    I8080DevBusPrint(stdout, sys8080->devbus);
-    I8080MemPrint(stdout, sys8080->sysmem);
-    if ( timer ) I8080TimerContextPrint(stdout, timer);
+    I8080TextBufferRef  summary = I8080TextBufferCreate();
     
-    I8080CGAShutdown();
+    I8080RegistersWriteToTextBuffer(summary, &sys8080->rgstrs);
+    I8080DevBusWriteToTextBuffer(summary, sys8080->devbus);
+    I8080MemWriteToTextBuffer(summary, sys8080->sysmem);
+    if ( timer ) I8080TimerContextWriteToTextBuffer(summary, timer);
     
+    if ( has_cga ) I8080CGAShutdown();
     I8080SystemSetPowerState(sys8080, false);
     I8080SystemDestroy(sys8080);
+    
+    printf("\n%s\n", I8080TextBufferGetCStringPtr(summary));
+    I8080TextBufferDestroy(summary);
     
     return 0;
 }

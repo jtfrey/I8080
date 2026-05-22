@@ -198,10 +198,11 @@ The first 16 bytes of the mapped address region act as registers.  This discussi
 | `0`   | `$8000` | `ppu_mode` | Control the rendering functionality of the PPU |
 | `1`   | `$8001` | `ppu_status` | (Read-only) bits set to reflect state of a rendering pass |
 | `2`   | `$8002` | `sprite_offset` | Set to bias the selection of sprites for rendering; useful if the per-line limit has been hit (as reflected by the `ppu_status` from the last pass) |
-| `3`   | `$8003` | `is_rendering` | (Read-only) non-zero when the PPU is rendering, zero when it is not |
-| `4`   | `$8004` | `dma_dst` | DMA copy destination |
-| `5`   | `$8005` | `dma_src_offet` | DMA copy source offset within page |
-| `6`   | `$8006` | `dma_src_page` | DMA copy source page and trigger |
+| `3`   | `$8003` | `inte_opcode` | Set to a non-zero opcode and the renderer will start a cycle by raising an interrupt with the system, triggering the exection of that opcode (e.g. a `RST #`).  This can be used to trigger any non-graphical game update code to run while the renderer is building and displaying the screen. |
+| `4`   | `$8004` | `is_rendering` | (Read-only) non-zero when the PPU is rendering, zero when it is not |
+| `5`   | `$8005` | `dma_dst` | DMA copy destination |
+| `6`   | `$8006` | `dma_src_offet` | DMA copy source offset within page |
+| `7`   | `$8007` | `dma_src_page` | DMA copy source page and trigger |
 
 The `ppu_mode` comprises a series of bits:
 

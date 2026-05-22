@@ -175,6 +175,53 @@ I8080MemPrint(
     }
 }
 
+//
+
+void
+I8080MemWriteToTextBuffer(
+    I8080TextBufferRef  tbuff,
+    I8080MemRef         mem
+)
+{
+    I8080MemPrivate_t   *MEM = (I8080MemPrivate_t*)mem;
+    
+    I8080Addr_t         page_s = 0, page_e = 1;
+    int                 page_s_kind = PAGE_KIND(page_s),
+                        page_e_kind;
+    
+    while ( true ) {
+        bool            should_switch = true;
+        
+        if ( page_e < 256 ) {
+            page_e_kind = PAGE_KIND(page_e);
+            if ( page_e_kind == page_s_kind ) {
+                should_switch = ! ((page_e_kind != kI8080MemPrintMapper) || (mem->mapper_refs[page_s] == mem->mapper_refs[page_e]));
+            }
+        }
+        if ( should_switch ) {
+            // Pages page_s through page_e - 1 can be summarized:
+            switch ( page_s_kind ) {
+                case kI8080MemPrintEmptyPage:
+                    I8080TextBufferPrintf(tbuff, "I8080Mem[$%02hX00..$%02hXFF] : unused\n", page_s, page_e - 1);
+                    break;
+                case kI8080MemPrintAllocated:
+                    I8080TextBufferPrintf(tbuff, "I8080Mem[$%02hX00..$%02hXFF] : allocated RAM\n", page_s, page_e - 1);
+                    break;
+                case kI8080MemPrintMapper: {
+                    const char  *mapper_name = mem->mapper_refs[page_s]->callbacks.mapper_name;
+                    I8080TextBufferPrintf(tbuff, "I8080Mem[$%02hX00..$%02hXFF] : mapper %p \"%s\"\n", page_s, page_e - 1,
+                                        mem->mapper_refs[page_s], mapper_name ? mapper_name : "<unspecified>");
+                    break;
+                }
+            }
+            page_s = page_e;
+            page_s_kind = page_e_kind;
+        }
+        if ( page_e == 256 ) break;
+        page_e++;
+    }
+}
+
 #undef PAGE_KIND
 
 //

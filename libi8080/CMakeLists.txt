@@ -73,6 +73,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(LIBI8080_SOURCES
     I8080Config.c
     I8080Logging.c
+    I8080TextBuffer.c
     I8080Registers.c
     I8080Memory.c
     I8080DeviceIO.c
@@ -90,6 +91,7 @@ set(LIBI8080_SOURCES
 # Header files for the library:
 set(LIBI8080_HEADERS
     I8080Logging.h
+    I8080TextBuffer.h
     I8080Registers.h
     I8080Memory.h
     I8080DeviceIO.h

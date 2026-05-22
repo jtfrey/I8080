@@ -14,6 +14,7 @@
 #define __I8080DEVICEIO_H__
 
 #include "I8080Config.h"
+#include "I8080TextBuffer.h"
 
 /**
  * I/O device id
@@ -227,6 +228,15 @@ void I8080DevBusWriteDevice(I8080DevBusRef devbus, I8080DevId dev_id, uint8_t by
  * @param devbus        the I/O bus
  */
 void I8080DevBusPrint(FILE *stream, I8080DevBusRef devbus);
+
+/**
+ * Write a summary of the device bus to a text buffer
+ * Writes a summary of the device bus \p devbus to the text buffer
+ * \p tbuff.
+ * @param tbuff         the text buffer to which to write
+ * @param devbus        the I/O bus
+ */
+void I8080DevBusWriteToTextBuffer(I8080TextBufferRef tbuff, I8080DevBusRef devbus);
 
 /** 
  * I/O device definition that interfaces with stdin

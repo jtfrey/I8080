@@ -315,9 +315,11 @@ typedef enum {
     kI8080PPURegisterIndexStatus        = 1,    /*!< PPU status, see \ref I8080PPUStatus_t */
     kI8080PPURegisterIndexSpriteOffset  = 2,    /*!< Begin filling sprite slots from this offset in the sprite table;
                                                      can be used to alter the precedence bias of sprite selection */
-    kI8080PPURegisterIndexIsRendering   = 3,    /*!< (Read-only) Non-zero when the PPU is rendering to video, zero otherwise; kinda like
+    kI8080PPURegisterIndexINTEOpcode    = 3,    /*!< if non-zero, the 8080 opcode to deliver via an INTE to the CPU
+                                                     when a rendering cycle begins (to trigger non-graphics processing) */
+    kI8080PPURegisterIndexIsRendering   = 4,    /*!< (Read-only) Non-zero when the PPU is rendering to video, zero otherwise; kinda like
                                                      an inverse v-blank indicator */
-    kI8080PPURegisterIndexDMADest       = 4,    /*!< Direct-Memory Access copy destination:
+    kI8080PPURegisterIndexDMADest       = 5,    /*!< Direct-Memory Access copy destination:
                                                         0x00:  208-byte sprite table
                                                         0x01:  256-byte tile table
                                                         0x02:  256-byte tile map 0
@@ -325,8 +327,8 @@ typedef enum {
                                                      Set this register before setting the DMA src page register,
                                                      \p kI8080PPURegisterIndexDMASrcPage
                                                  */
-    kI8080PPURegisterIndexDMASrcOffset  = 5,
-    kI8080PPURegisterIndexDMASrcPage    = 6,    /*!< Memory page from which the DMA copy should be made; writing to this
+    kI8080PPURegisterIndexDMASrcOffset  = 6,
+    kI8080PPURegisterIndexDMASrcPage    = 7,    /*!< Memory page from which the DMA copy should be made; writing to this
                                                      register triggers the DMA to stall the CPU and perform the copy */
     kI8080PPURegisterIndexMax
 } I8080PPURegisterIndex_t;

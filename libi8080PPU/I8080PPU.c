@@ -22,6 +22,7 @@ typedef union __attribute__((packed)) {
         I8080PPUMode_t      ppu_mode;           /*!< PPU operational mode settings */
         I8080PPUMode_t      ppu_status;         /*!< (Read-only) PPU status byte */
         uint8_t             sprite_offset;      /*!< start filling active sprite slots from this index in the sprite table */
+        uint8_t             inte_opcode;        /*!< opcode to deliver on an INTE to the CPU when rendering completes */
         uint8_t             is_rendering;       /*!< (Read-only) non-zero when the PPU is rendering to video, zero otherwise */
         uint8_t             dma_dst;            /*!< which page of the PPU memory should receive the DMA copy */
         uint8_t             dma_src_offset;
@@ -140,7 +141,6 @@ I8080PPUFillSpriteSlots(
                     uint8_t     *pixel_ptr = &ttbl[spriteptr->tileref.tile_idx].pixels[I8080_PPU_TILEROWBYTES * (
                                     (spriteptr->options & kI8080PPUSpriteOptsFlipY) ? (I8080_PPU_TILEHEIGHT - ry) : (ry - 1))
                                 ];
-                                
                     slots->y = spriteptr->y;
                     x = slots->x = spriteptr->x;
                     slots->options = spriteptr->options;
@@ -265,7 +265,10 @@ I8080PPURenderThread(
             int                     i, j, k;
             
             ppu->mapped.rgstrs.is_rendering = 0xFF;
-            pthread_mutex_unlock(&ppu->render_lock);   
+            pthread_mutex_unlock(&ppu->render_lock);
+            
+            // Interrupt?
+            if ( ppu->sys8080 && ppu->mapped.rgstrs.inte_opcode ) I8080SystemRaiseInterrupt(ppu->sys8080, ppu->mapped.rgstrs.inte_opcode);
             
             // Set background color and prepare for refresh:
             redrawwin(ppu->wndw);
@@ -469,7 +472,7 @@ I8080PPURenderThread(
             }
         }
         /* f = 60 Hz = 60 / s => t = (1/60) s = (1e6 µs/s)(1/60)s = (1/6)e5 µs */
-        I8080PPUSetTimespecWithMicroseconds(1e6/60.0, &ts);
+        I8080PPUSetTimespecWithMicroseconds(1e6/60.0 - (I8080MicrosecondsMakeNow() - now), &ts);
         pthread_cond_timedwait(&ppu->render_cond, &ppu->render_lock, &ts);
     }
     pthread_mutex_unlock(&ppu->render_lock);
@@ -654,14 +657,16 @@ I8080PPUContextWrite(
                     uint8_t         *dst;
                     
                     pthread_mutex_lock(&ppu->render_lock);
+                    ppu->mapped.rgstrs.dma_src_page = byte;
+                    
                     I8080SystemSetStall(ppu->sys8080, true);
-                    src = (ppu->mapped.rgstrs.dma_src_page << 8) || ppu->mapped.rgstrs.dma_src_offset;
-                    switch ( byte ) {
+                    src = ((I8080Addr_t)byte << 8) | ppu->mapped.rgstrs.dma_src_offset;
+                    switch ( ppu->mapped.rgstrs.dma_dst ) {
                         case 0:{
                             int         count = sizeof(ppu->mapped.sprites);
                             
                             dst = (uint8_t*)ppu->mapped.sprites;
-                            while ( count-- ) *dst = I8080MemRead(ppu->sys8080->sysmem, src++);
+                            while ( count-- ) *dst++ = I8080MemRead(ppu->sys8080->sysmem, src++);
                             break;
                         }
                         case 1:
@@ -669,8 +674,8 @@ I8080PPUContextWrite(
                         case 3: {
                             int         count = 256;
                             
-                            dst = ((uint8_t*)&ppu->mapped) + (byte << 8);
-                            while ( count-- ) *dst = I8080MemRead(ppu->sys8080->sysmem, src++);
+                            dst = ((uint8_t*)&ppu->mapped) + ((uint16_t)ppu->mapped.rgstrs.dma_dst << 8);
+                            while ( count-- ) *dst++ = I8080MemRead(ppu->sys8080->sysmem, src++);
                             break;
                         }
                     }

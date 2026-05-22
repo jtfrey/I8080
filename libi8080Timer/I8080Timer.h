@@ -14,6 +14,7 @@
 #include "I8080Memory.h"
 #include "I8080Timing.h"
 #include "I8080System.h"
+#include "I8080TextBuffer.h"
 
 /**
  * Timer enablement state
@@ -171,6 +172,15 @@ bool I8080TimerContextSetInterval(I8080TimerContextPtr context, unsigned timer_i
  * @param systime       the realtime timer context to summarize
  */
 void I8080TimerContextPrint(FILE *stream, I8080TimerContextPtr systime);
+
+/**
+ * Write a summary of the realtime timer to a text buffer
+ * Writes a summary of the realtime timer in \p systime to the text buffer
+ * \p tbuff.
+ * @param tbuff         the text buffer to which to write
+ * @param systime       the realtime timer context to summarize
+ */
+void I8080TimerContextWriteToTextBuffer(I8080TextBufferRef tbuff, I8080TimerContextPtr systime);
 
 /**
  * Timer callbacks

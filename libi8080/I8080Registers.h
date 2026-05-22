@@ -14,6 +14,7 @@
 #define __I8080REGISTERS_H__
 
 #include "I8080Config.h"
+#include "I8080TextBuffer.h"
 
 /**
  * Map register index to actual offset in register array
@@ -219,5 +220,14 @@ I8080Registers(void)
  * @param rgstrs        pointer to the registers structure to summarize
  */
 void I8080RegistersPrint(FILE *stream, I8080Registers_t *rgstrs);
+
+/**
+ * Write a summary of the register values to a text buffer.
+ * Writes a summary of the register values in \p rgstrs to the text buffer
+ * \p tbuff.
+ * @param tbuff         the text buffer to which to write
+ * @param rgstrs        pointer to the registers structure to summarize
+ */
+void I8080RegistersWriteToTextBuffer(I8080TextBufferRef tbuff, I8080Registers_t *rgstrs);
 
 #endif /* __I8080REGISTERS_H__ */

@@ -461,6 +461,61 @@ I8080TimerContextPrint(
 }
 
 //
+
+void
+I8080TimerContextWriteToTextBuffer(
+    I8080TextBufferRef      tbuff,
+    I8080TimerContextPtr    systime
+)
+{
+    int                     i;
+    
+    I8080TimerContextDateTimeFill(I8080TimerContextDateTimeNow(systime));
+    I8080TextBufferPrintf(tbuff,
+                    "I8080Timer:\n"
+                    "  [$%1$02lX] |- 0x%2$02hhX (%2$u)\n"
+                    "  [$%3$02lX] |- 0x%4$02hhX (%4$u)\n"
+                    "  [$%5$02lX] |- 0x%6$02hhX (%6$u)\n"
+                    "  [$%7$02lX] |- 0x%8$02hhX (%8$u)\n"
+                    "  [$%9$02lX] |- 0x%10$02hhX (%10$u)\n"
+                    "  [$%11$02lX] |- 0x%12$02hhX (%12$u)\n"
+                    "  [$%13$02lX] |- 0x%14$02hhX (%14$u)\n"
+                    "  [$%15$02lX] |- 0x%16$02hhX (%16$u)\n"
+                    "        |- TIMERS:\n",
+            offsetof(I8080TimerContext_t, datetime.S), systime->datetime.R[0], 
+            offsetof(I8080TimerContext_t, datetime.M), systime->datetime.R[1], 
+            offsetof(I8080TimerContext_t, datetime.H), systime->datetime.R[2], 
+            offsetof(I8080TimerContext_t, datetime.d), systime->datetime.R[3],
+            offsetof(I8080TimerContext_t, datetime.m), systime->datetime.R[4], 
+            offsetof(I8080TimerContext_t, datetime.Y), systime->datetime.R[5], 
+            offsetof(I8080TimerContext_t, datetime.Ycent), systime->datetime.R[6], 
+            offsetof(I8080TimerContext_t, datetime.fired), systime->datetime.R[7]);
+    for ( i = 0; i < 8; i++ ) {
+        I8080TextBufferPrintf(tbuff, "  [$%02lX]     |- %X: ", offsetof(I8080TimerContext_t, timers[i]), i);
+        if ( systime->timers[i].enable != kI8080TimerEnableUnused ) {
+            I8080Microseconds   msec = I8080TimerRegisterIntervalInMicroseconds(systime->timers[i]);
+            
+            switch ( systime->timers[i].enable ) {
+                case kI8080TimerEnableUnused:
+                    break;
+                case kI8080TimerEnableOff:
+                    I8080TextBufferPrintf(tbuff, "%.3f ms, off (opcode: 0x%02hhX)\n",  msec, systime->timers[i].opcode);
+                    break;
+                case kI8080TimerEnableOn:
+                    I8080TextBufferPrintf(tbuff, "%.3f ms, running (opcode: 0x%02hhX)\n",  msec, systime->timers[i].opcode);
+                    break;
+                case kI8080TimerEnableAutoReenable:
+                    I8080TextBufferPrintf(tbuff, "%.3f ms, auto-reenable (opcode: 0x%02hhX)\n", msec, systime->timers[i].opcode);
+                    break;
+            }
+        } else {
+            I8080TextBufferPrintf(tbuff, "unused\n");
+        }
+    }
+    I8080TextBufferPrintf(tbuff, "\n");
+}
+
+//
 #pragma mark -
 //
 
