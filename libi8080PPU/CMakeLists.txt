@@ -4,10 +4,12 @@
 
 # Source files for the library:
 set(LIBI8080PPU_SOURCES
-    I8080PPU.c)
+    I8080PPU.c
+    I8080DPad.c)
 # Header files for the library:
 set(LIBI8080PPU_HEADERS
-    I8080PPU.h)
+    I8080PPU.h
+    I8080DPad.h)
 
 add_library(i8080PPU SHARED)
 target_sources(i8080PPU

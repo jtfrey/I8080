@@ -83,32 +83,6 @@ typedef enum __attribute__((packed)) {
     kI8080CGAOpFill         = 0x80, /*!< fill with the lower 7 bits of the operation */
 } I8080CGAOp_t;
 
-/**
- * Curses "controller" states
- * Pretend the keyboard is an NES controller.
- */
-typedef struct __attribute__((packed)) {
-#ifdef BITS_BIG_ENDIAN
-    uint8_t         d_right : 1;
-    uint8_t         d_left : 1;
-    uint8_t         d_down : 1;
-    uint8_t         d_up : 1;
-    uint8_t         start : 1;
-    uint8_t         select : 1;
-    uint8_t         b : 1;
-    uint8_t         a : 1;
-#else
-    uint8_t         a : 1;
-    uint8_t         b : 1;
-    uint8_t         select : 1;
-    uint8_t         start : 1;
-    uint8_t         d_up : 1;
-    uint8_t         d_down : 1;
-    uint8_t         d_left : 1;
-    uint8_t         d_right : 1;
-#endif
-} I8080CGAController_t;
-
 
 /**
  * CGA register index
@@ -129,8 +103,7 @@ typedef enum {
     kI8080CGARegisterU16Lo,
     kI8080CGARegisterU16Hi,
     kI8080CGARegisterMode,
-    kI8080CGARegisterOp,
-    kI8080CGARegisterCntrlr
+    kI8080CGARegisterOp
 } I8080CGARegister_t;
 
 /**
@@ -171,7 +144,6 @@ typedef union {
         uint8_t                 u16hi;          /*!< high-byte of a 16-bit value */
         I8080CGAMode_t          mode;           /*!< the mode in which the display is operating */
         I8080CGAOp_t            op;             /*!< operation trigger */
-        I8080CGAController_t    cntrlr;         /*!< controller read */
     };
 } I8080CGARegisters_t;
 

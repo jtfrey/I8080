@@ -15,6 +15,7 @@
 #include "I8e8eFileDeviceObj.h"
 #include "I8080CGA.h"
 #include "I8080PPU.h"
+#include "I8080DPad.h"
 #include "I8080Timer.h"
 #include <fcntl.h>
 #include <signal.h>
@@ -62,6 +63,7 @@ static struct option i8e8e_options[] = {
         { "timers",         required_argument,  0,  'T' },
         { "cga",            required_argument,  0,  'c' },
         { "ppu",            required_argument,  0,  'g' },
+        { "dpad",           optional_argument,  0,  'd' },
         { "list-palettes",  no_argument,        0,  'p' },
         { NULL,             0,                  0,   0  }
     };
@@ -71,7 +73,7 @@ static const char *i8e8e_options_str =
 #ifdef HAS_MMAP
         "m:"
 #endif
-        "U:P:S:f:t:T:c:g:p";
+        "U:P:S:f:t:T:c:g:d:p";
 
 void
 usage(
@@ -112,6 +114,10 @@ usage(
             "    -T/--timers <timers-options>   configure realtime timers\n"
             "    -c/--cga <cga-options>         configure a Curses Graphics Adapter...\n"
             "    -g/--ppu <ppu-options>         ...or configure a Picture Processing Unit\n"
+            "    -d/--dpad                      attach a D-pad controller input device on\n"
+            "                                   the first available input channel number\n"
+            "    --dpad=<dev-id>                attach a D-pad on a specific input channel\n"
+            "                                   number\n"
             "    -p/--list-palettes             list the available CGA color palettes\n"
             "                                   then exit\n"
             "\n"
@@ -257,8 +263,8 @@ typedef struct {
     I8080Addr_t                 base_addr;
     I8080CGAMode_t              mode;
     I8080CGAPaletteId_t         palette_id;
-    bool                        has_dims;
-    bool                        has_coords;
+    bool                        have_dims;
+    bool                        have_coords;
     int                         h, w, y, x;
     I8080CGAMapperContextPtr    context;
 } I8e8eCGA_t;
@@ -334,7 +340,7 @@ I8e8eCGAParse(
                     ERROR("Invalid CGA mapping, width is < 2: %s", in_str_orig);
                     return false;
                 }
-                out_cga->has_dims = true;
+                out_cga->have_dims = true;
                 s_end += nchars;
                 break;
             }
@@ -346,7 +352,7 @@ I8e8eCGAParse(
                     ERROR("                     %*s^", (s_end - in_str_orig));
                     return false;
                 }
-                out_cga->has_coords = true;
+                out_cga->have_coords = true;
                 s_end += nchars;
                 break;
             }
@@ -475,10 +481,12 @@ main(
     I8080DeviceStdOutputOpts_t  tty_out_opts = 0;
     I8080Addr_t                 SP = 0x0000, PC=0x0000;
     I8e8eCGA_t                  cga;
-    bool                        has_cga = false;
+    bool                        have_cga = false;
     I8e8ePPU_t                  ppu;
-    bool                        has_ppu = false;
-    I8e8eMemObj_t              *memobjs = NULL, *memobjs_tail = NULL;
+    bool                        have_ppu = false;
+    I8080DevBusRegisterId       dpad_dev_id = kI8080DevBusRegisterIdNextAvail;
+    bool                        have_dpad = false;
+    I8e8eMemObj_t               *memobjs = NULL, *memobjs_tail = NULL;
     I8e8eROMMappingMode_t       rom_mapmode = kI8e8eROMMappingModeAlloc;
     I8e8eFileDeviceObj_t        *filedevobjs = NULL, *filedevobjs_tail = NULL;
     I8080Addr_t                 timer_addr;
@@ -636,13 +644,28 @@ main(
             
             case 'c': {
                 if ( ! I8e8eCGAParse(optarg, &cga) ) exit(EINVAL);
-                has_cga = true;
+                have_cga = true;
                 break;
             }
             
             case 'g': {
                 if ( ! I8e8ePPUParse(optarg, &ppu) ) exit(EINVAL);
-                has_ppu = true;
+                have_ppu = true;
+                break;
+            }
+            
+            case 'd': {
+                if ( optarg ) {
+                    char        *endptr;
+                    long        v = strtol(optarg, &endptr, 0);
+                    
+                    if ( (endptr == optarg) || (v < 1) || (v > 255) ) {
+                        ERROR("Invalid input device channel: %s", optarg);
+                        exit(EINVAL);
+                    }
+                    dpad_dev_id = v;
+                }
+                have_dpad = true;
                 break;
             }
             
@@ -660,7 +683,7 @@ main(
         }
     }
     
-    if ( has_ppu && has_cga ) {
+    if ( have_ppu && have_cga ) {
         ERROR("CGA and PPU memory mapped devices cannot be used together");
         exit(EINVAL);
     }
@@ -775,11 +798,11 @@ main(
     }
     
     // Was CGA requested?
-    if ( has_cga ) {
+    if ( have_cga ) {
         I8080CGAMapperContextPtr    cga_context;
         I8080MemMapperRef_t         cga_mapper = { .callbacks = *I8080CGAMapperCallbacks };
         
-        if ( cga.has_dims ) {
+        if ( cga.have_dims ) {
             cga_context = I8080CGAMapperContextCreateWithOriginAndSize(cga.mode, cga.x, cga.y, cga.w, cga.h);
         } else {
             cga_context = I8080CGAMapperContextCreateWithWindow(cga.mode, NULL);
@@ -800,7 +823,7 @@ main(
     }
     
     // Was PPU requested?
-    if ( has_ppu ) {
+    if ( have_ppu ) {
         I8080PPUMapperContextPtr    ppu_context;
         I8080MemMapperRef_t         ppu_mapper = { .callbacks = *I8080PPUMapperCallbacks };
         
@@ -808,6 +831,13 @@ main(
         ppu_mapper.context = ppu_context;
         ppu_mapper.addr_range = I8080AddrRangeCreate(ppu.base_addr, I8080PPUMapperAddressRangeLength);
         if ( ! I8080MemRegisterMapper(sys8080->sysmem, &ppu_mapper) ) {
+            exit(EINVAL);
+        }
+    }
+    
+    // D-pad?
+    if ( have_dpad ) {
+        if ( ! I8080DevBusRegisterDevice(sys8080->devbus, dpad_dev_id, I8080DeviceDPadIn, NULL) ) {
             exit(EINVAL);
         }
     }
@@ -891,7 +921,7 @@ main(
     I8080MemWriteToTextBuffer(summary, sys8080->sysmem);
     if ( timer ) I8080TimerContextWriteToTextBuffer(summary, timer);
     
-    if ( has_cga ) I8080CGAShutdown();
+    if ( have_cga ) I8080CGAShutdown();
     I8080SystemSetPowerState(sys8080, false);
     I8080SystemDestroy(sys8080);
     

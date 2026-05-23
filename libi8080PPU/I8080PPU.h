@@ -324,10 +324,11 @@ typedef enum {
                                                         0x01:  256-byte tile table
                                                         0x02:  256-byte tile map 0
                                                         0x03:  256-byte tile map 1
-                                                     Set this register before setting the DMA src page register,
+                                                     Set this register and the \ref kI8080PPURegisterIndexDMASrcOffset
+                                                     registers before setting the DMA src page register,
                                                      \p kI8080PPURegisterIndexDMASrcPage
                                                  */
-    kI8080PPURegisterIndexDMASrcOffset  = 6,
+    kI8080PPURegisterIndexDMASrcOffset  = 6,    /*!< Offset within the source memory page at which copying should begin */
     kI8080PPURegisterIndexDMASrcPage    = 7,    /*!< Memory page from which the DMA copy should be made; writing to this
                                                      register triggers the DMA to stall the CPU and perform the copy */
     kI8080PPURegisterIndexMax

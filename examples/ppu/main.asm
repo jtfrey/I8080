@@ -98,18 +98,44 @@ PPU_BASE        equ     08000h
                 sta     PPU_RGSTR_MODE
                 
                 WAITRNDRSTRT
-ANIMLOOP:       WAITRNDROVR
+ANIMLOOP:       
+                ; Handle controls:
+                in      65
+                cpi     0
+                jz      CONT
+                mov     B, A
+                ani     00010000b   ; start button
+                jnz     EXIT
+                mov     A, B
+                ani     00100000b   ; select button
+                jz      CONT
+                lda     IS_PAUSED
+                xri     1
+                sta     IS_PAUSED
+                jnz     NEXTCYCLE
+                
+CONT:           lda     IS_PAUSED
+                cpi     0
+                jnz     NEXTCYCLE
+                
+                WAITRNDROVR
                 
                 ; Move the sprites
                 call    MVBALLS
-                
+           
+NEXTCYCLE:
                 ; Wind down any unused CPU time...
                 WAITRNDRSTRT
                 ; ...before starting the next game loop.
                 jmp     ANIMLOOP
+
+EXIT:
+                mvi     A, 0
+                sta     PPU_RGSTR_MODE
                 
                 hlt
 
+IS_PAUSED:      db      00h
 
                 include "game_ball.asm"
 
