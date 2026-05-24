@@ -107,6 +107,26 @@ I8080LoggingFormat_t I8080LoggingGetFormat(void);
  */
 void I8080LoggingSetFormat(I8080LoggingFormat_t format);
 
+
+typedef enum {
+    kI8080LoggingBufferTypeLine     = -1,   /*!< Flush log information to file when newlines are encountered */
+    kI8080LoggingBufferTypeNone     = 0,    /*!< Flush log information to file as characters are written */
+    kI8080LoggingBufferTypeSmall    = 512,  /*!< Buffer 512 characters before flushing */
+    kI8080LoggingBufferTypeDefault  = 4096  /*!< Buffer 4096 characters before flushing */
+} I8080LoggingBufferType_t;
+
+/**
+ * Set buffering behavior for logged information
+ * The smaller the buffer, the more time the program will spend flushing
+ * log information to the file.  The special constants, \ref kI8080LoggingLineBuffering,
+ * \ref kI8080LoggingNoBuffering, \ref kI8080LoggingSmallBuffer, and
+ * \ref kI8080LoggingDefaultBuffer are explained elsewhere; other than those values, any
+ * positive integer passed to this function will cause a buffer of that byte size to be
+ * allocated and used for log output.
+ * @param buffer_type           one of the special constants or a positive integer value
+ */
+void I8080LoggingSetBuffering(I8080LoggingBufferType_t buffer_type);
+
 /**
  * Set the logging stream
  * Any subsequent logging messages will be written to \p stream.  If

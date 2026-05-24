@@ -151,6 +151,9 @@ I8080LoggingSetFormat(
 
 static FILE *__logstream = NULL;
 static bool __should_close_logstream = false;
+static char I8080LoggingStaticBuffer[4096];
+static char *I8080LoggingBuffer = I8080LoggingStaticBuffer;
+static I8080LoggingBufferType_t I8080LoggingBufferType = kI8080LoggingBufferTypeDefault;
 
 void
 I8080LoggingSetStream(
@@ -161,7 +164,19 @@ I8080LoggingSetStream(
     if ( stream != __logstream ) {
         if ( __should_close_logstream ) fclose(__logstream);
         __logstream = stream;
-        setvbuf(__logstream, NULL, _IOLBF, BUFSIZ);
+        switch ( I8080LoggingBufferType ) {
+            case kI8080LoggingBufferTypeLine:
+                setvbuf(__logstream, NULL, _IOLBF, BUFSIZ);
+                break;
+            case kI8080LoggingBufferTypeNone:
+                setvbuf(__logstream, NULL, _IONBF, 0);
+                break;
+            case kI8080LoggingBufferTypeSmall:
+            case kI8080LoggingBufferTypeDefault:
+            default:
+                setvbuf(__logstream, I8080LoggingBuffer, _IOFBF, I8080LoggingBufferType);
+                break;
+        }
         __should_close_logstream = should_close;
     }
 }
@@ -176,9 +191,57 @@ I8080LoggingSetFile(
     
     if ( stream ) {
         I8080LoggingSetStream(stream, true);
+        INFO("Logging opened on %s with buffer size %ld", filepath, I8080LoggingBufferType);
         return true;
     }
     return false;
+}
+
+//
+
+void
+I8080LoggingSetBuffering(
+    I8080LoggingBufferType_t    buffer_type
+)
+{
+    if ( (buffer_type >= kI8080LoggingBufferTypeLine) && (buffer_type != I8080LoggingBufferType) ) {
+        if ( __logstream ) {
+            fflush(__logstream);
+            setvbuf(__logstream, NULL, _IONBF, 0);
+        }
+        if ( I8080LoggingBuffer && (I8080LoggingBuffer != I8080LoggingStaticBuffer) ) {
+            free((void*)I8080LoggingBuffer);
+        }
+        switch ( buffer_type ) {
+            case kI8080LoggingBufferTypeNone:
+                I8080LoggingBufferType = kI8080LoggingBufferTypeNone;
+                if ( __logstream ) setvbuf(__logstream, NULL, _IONBF, 0);
+                break;
+                
+            default:
+                I8080LoggingBuffer = malloc(buffer_type);
+                if ( I8080LoggingBuffer ) {
+                    I8080LoggingBufferType = buffer_type;
+                    if ( __logstream ) setvbuf(__logstream, I8080LoggingBuffer, _IOFBF, buffer_type);
+                    break;
+                } else {
+                    ERROR("Unable to allocate logging buffer!  Reverting to default buffering.");
+                    // no break!  fall through to line-buffering
+                }
+                
+            case kI8080LoggingBufferTypeLine:
+                I8080LoggingBufferType = kI8080LoggingBufferTypeLine;
+                if ( __logstream ) setvbuf(__logstream, NULL, _IOLBF, BUFSIZ);
+                break;
+                
+            case kI8080LoggingBufferTypeSmall:
+            case kI8080LoggingBufferTypeDefault:
+                I8080LoggingBufferType = buffer_type;
+                I8080LoggingBuffer = I8080LoggingStaticBuffer;
+                if ( __logstream ) setvbuf(__logstream, I8080LoggingBuffer, _IOFBF, buffer_type);
+                break;
+        }
+    }
 }
 
 //

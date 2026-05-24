@@ -268,7 +268,7 @@ typedef enum __attribute__((packed)) {
  * of one opcode to more than one instruction will be noted on stderr.
  */
 typedef struct {
-    uint8_t                     n_instructions;         /*!< the number of instructions filled-in by the compile */
+    int                         n_instructions;         /*!< the number of instructions filled-in by the compile */
     const char                  *handler_names[256];    /*!< the handler name for each opcode is noted */
     I8080InstrDispatchCallback  dispatchers[256];       /*!< the dispatch function for the opcode */
 } I8080InstrTable_t;
@@ -290,5 +290,22 @@ void I8080InstrTableInit(I8080InstrTable_t *itbl, const I8080InstrHandler_t *han
  * and easy instruction dispatch.
  */
 extern const I8080InstrHandler_t *I8080DefaultISA;
+
+/**
+ * Information about an 8080 instruction
+ */
+typedef struct {
+    I8080Instr_t    opcode;         /*!< the opcode */
+    const char      *symbolic;      /*!< symbolic representation of the instruction */
+    int             n_bytes;        /*!< the number of operand bytes + the opcode byte */
+    const char      *description;   /*!< a description of what the instruciton does */
+} I8080InstrSummary_t;
+
+/**
+ * Mapping of instruction information indexed by opcode
+ * Given an 8080 opcode, the array element at that index contains information
+ * about the instruction.
+ */
+extern const I8080InstrSummary_t I8080InstrSummaryTable[];
 
 #endif /* __I8080INSTRUCTIONS_H__ */

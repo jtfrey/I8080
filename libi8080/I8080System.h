@@ -74,11 +74,21 @@ typedef enum {
 
 /**
  * Optional behaviors of the system
+ * The monolithinc accelerated instruction handler has one major
+ * caveat to it:  the parity and auxilliary carry condition bits
+ * are NOT implemented.  The DAA opcode is present and will
+ * convert a lone byte to BCD format, but nothing will carry
+ * over to another byte.  The parity-even and -odd
+ * jump/call/return opcodes are present but will never be
+ * taken (since the parity bit never gets set).  If your 8080
+ * code makes absolutely no use of BCD or the AC/P condition
+ * bits, then you'll be fine -- and run much faster.
  */
 typedef enum {
     kI8080SystemOpts2MHzClock   = 0b1,      /*!< constrain runtime to 2 MHz */
+    kI8080SystemOptsAccelInstr  = 0b10,     /*!< use the monolithic accelerated instruction handler */
     
-    kI8080SystemOptsAll         = 0b1       /*!< all options enabled */
+    kI8080SystemOptsAll         = 0b11      /*!< all options enabled */
 } I8080SystemOpts_t;
 
 /**

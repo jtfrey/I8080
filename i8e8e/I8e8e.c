@@ -58,6 +58,7 @@ static struct option i8e8e_options[] = {
         { "sp",             required_argument,  0,  'S' },
         { "SP",             required_argument,  0,  kI8e8eOptAlternateSP },
         { "2mhz",           no_argument,        0,  '2' },
+        { "accel-instrs",   no_argument,        0,  'A' },
         { "file-device",    required_argument,  0,  'f' },
         { "tty",            required_argument,  0,  't' },
         { "timers",         required_argument,  0,  'T' },
@@ -73,7 +74,7 @@ static const char *i8e8e_options_str =
 #ifdef HAS_MMAP
         "m:"
 #endif
-        "U:P:S:f:t:T:c:g:d:p";
+        "U:P:S:2Af:t:T:c:g:d:p";
 
 void
 usage(
@@ -87,9 +88,8 @@ usage(
             "    -h/--help                      show this help\n"
             "    -v/--verbose                   increase logging level\n"
             "    -q/--quiet                     decrease logging level\n"
-            "    -l/--logfile <filepath>        redirect logging output to the file\n"
-            "                                   at <filepath>; new lines are appended\n"
-            "                                   to existing data in <filepath>\n"
+            "    -l/--logfile <log-dest>        redirect logging output to the destination;\n"
+            "                                   new lines are appended to existing data\n"
             "    -L/--load <bytes-in>           load bytes from a file into the system\n"
             "                                   system memory of the emulator\n"
             "    -R/--rom <bytes-in>            map bytes from from a file as a ROM\n"
@@ -108,6 +108,8 @@ usage(
             "                                   a clock frequency of 2 MHz; without this\n"
             "                                   flag instructions are dispatched as fast\n"
             "                                   as possible\n"
+            "    -A/--accel-instrs              use the monolithic, accelerated instruction\n"
+            "                                   handler\n"
             "    -f/--file-device <file-dev>    connect a file to the device bus of the\n"
             "                                   emulator\n"
             "    -t/--tty <tty-options>         configure TTY options\n"
@@ -120,6 +122,13 @@ usage(
             "                                   number\n"
             "    -p/--list-palettes             list the available CGA color palettes\n"
             "                                   then exit\n"
+            "\n"
+            "    <log-dest> = <filepath>{:<buffer>}\n\n"
+            "        The file at <filepath> will have logged information appended to it.\n"
+            "        By default, <buffer>=4096 buffering is used to minimize the impact on\n"
+            "        emulator performance.  If increased flushing of log data is preferable,\n"
+            "        use a lower value OR <buffer>=line (or -1) for line buffering or\n"
+            "        <buffer>=none (or 0) for no buffering at all!\n"
             "\n"
             "    <addr> = ( $XXXX | 0xXXXX | 0N… | N… )\n\n"
             "        The emulator features a 64 KiB address space.  Addresses can be\n"
@@ -477,6 +486,7 @@ main(
 )
 {
     int                         opt = 0, opt_index = 0;
+    I8080SystemOpts_t           system_opts = 0;
     I8080DeviceStdInputOpts_t   tty_in_opts = 0;
     I8080DeviceStdOutputOpts_t  tty_out_opts = 0;
     I8080Addr_t                 SP = 0x0000, PC=0x0000;
@@ -492,7 +502,6 @@ main(
     I8080Addr_t                 timer_addr;
     I8080TimerContextPtr        timer = NULL;
     bool                        have_timer = false;
-    bool                        have_2mhz = false;
     char                        *str;
     
     signal(SIGINT, handle_sigint);
@@ -540,12 +549,43 @@ main(
                 I8080LoggingLevelDecrement();
                 break;
             
-            case 'l':
-                if ( ! I8080LoggingSetFile(optarg, true) ) {
-                    ERROR("Unable to open file for logging: %s", optarg);
-                    exit(errno);
+            case 'l': {
+                char        *colon = strchr(optarg, ':');
+                
+                if ( colon ) {
+                    I8080LoggingBufferType_t    buffer_type = kI8080LoggingBufferTypeDefault;
+                    char                        *filepath = strndup(optarg, (colon - optarg));
+                    colon++;
+                    if ( strcasecmp(colon, "none") == 0 ) {
+                        buffer_type = kI8080LoggingBufferTypeNone;
+                    }
+                    else if ( strcasecmp(colon, "line") == 0 ) {
+                        buffer_type = kI8080LoggingBufferTypeLine;
+                    }
+                    else {
+                        char        *endptr;
+                        long        buffer_size = strtol(colon, &endptr, 0);
+                        
+                        if ( (endptr == colon) || (buffer_size < kI8080LoggingBufferTypeLine) ) {
+                            ERROR("Invalid log buffering kind: %s", colon);
+                            exit(EINVAL);
+                        }
+                        buffer_type = buffer_size;
+                    }
+                    I8080LoggingSetBuffering(buffer_type);
+                    if ( ! I8080LoggingSetFile(filepath, true) ) {
+                        ERROR("Unable to open file for logging: %s", filepath);
+                        exit(errno);
+                    }
+                    free((void*)filepath);
+                } else {
+                    if ( ! I8080LoggingSetFile(optarg, true) ) {
+                        ERROR("Unable to open file for logging: %s", optarg);
+                        exit(errno);
+                    }
                 }
                 break;
+            }
             
             case 'L': {
                 I8e8eMemObj_t  *memobj = I8e8eMemObjParse(kI8e8eMemObjTypeData, optarg);
@@ -613,7 +653,13 @@ main(
                 break;
             
             case '2':
-                have_2mhz = true;
+                INFO("Enabling 2 MHz clock accuracy in I8080System");
+                system_opts |= kI8080SystemOpts2MHzClock;
+                break;
+            
+            case 'A':
+                INFO("Enabling accelerated instruction handling in I8080System");
+                system_opts |= kI8080SystemOptsAccelInstr;
                 break;
             
             case 't':
@@ -697,7 +743,7 @@ main(
     // Allocate the system so we have the device bus and
     // memory subsystem available:
     sys8080 = I8080SystemCreateWithTTYContext(
-                    have_2mhz ? kI8080SystemOpts2MHzClock : 0,
+                    system_opts,
                     0,
                     &tty_context);
     
