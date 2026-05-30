@@ -21,7 +21,7 @@ I8080InstrDispatchIO(
     I8080Instr_t        instr
 )
 {
-    I8080DevId          dev_id = I8080MemRead(sys8080->sysmem, sys8080->rgstrs.PC++);
+    I8080DevId          dev_id = I8080InstrFetch(sys8080);
     
     if ( instr & 0b00001000 ) {
         // IN

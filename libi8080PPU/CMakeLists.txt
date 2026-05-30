@@ -2,6 +2,10 @@
 # CMake infrastructure for the PPU adapter
 #
 
+if(I8080_OS_MACOSX)
+    option(I8080_PPU_OSX_KEYCHECKS "Use Mac OS X key events in lieu of curses" TRUE)
+endif()
+
 # Source files for the library:
 set(LIBI8080PPU_SOURCES
     I8080PPU.c
@@ -26,7 +30,12 @@ target_link_libraries(i8080PPU
     PUBLIC
         i8080
         i8080CGA)
-
+if(I8080_PPU_OSX_KEYCHECKS)
+    target_compile_definitions(i8080PPU PRIVATE I8080_PPU_OSX_KEYCHECKS)
+    target_link_libraries(i8080PPU
+        PRIVATE
+            "-framework Carbon")
+endif()
 
 add_executable(ppu_demo)
 target_sources(ppu_demo

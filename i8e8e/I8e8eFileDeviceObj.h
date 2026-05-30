@@ -11,6 +11,7 @@
 #ifndef __I8E8EFILEDEVICEOBJ_H__
 #define __I8E8EFILEDEVICEOBJ_H__
 
+#include "I8080System.h"
 #include "I8080DeviceIO.h"
 
 typedef struct I8e8eFileDeviceObj {
@@ -24,5 +25,9 @@ typedef struct I8e8eFileDeviceObj {
 } I8e8eFileDeviceObj_t;
 
 I8e8eFileDeviceObj_t* I8e8eFileDeviceObjParse(const char *in_str);
+
+bool I8e8eFileDeviceObjRegister(I8e8eFileDeviceObj_t *file_devs, I8080SystemPtr sys8080);
+
+void I8e8eFileDeviceObjDestroy(I8e8eFileDeviceObj_t *file_devs);
 
 #endif /* __I8E8EFILEDEVICEOBJ_H__ */

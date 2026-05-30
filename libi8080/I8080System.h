@@ -85,10 +85,10 @@ typedef enum {
  * bits, then you'll be fine -- and run much faster.
  */
 typedef enum {
-    kI8080SystemOpts2MHzClock   = 0b1,      /*!< constrain runtime to 2 MHz */
-    kI8080SystemOptsAccelInstr  = 0b10,     /*!< use the monolithic accelerated instruction handler */
+    kI8080SystemOpts2MHzClock       = 0b1,      /*!< constrain runtime to 2 MHz */
+    kI8080SystemOptsAccelInstr      = 0b10,     /*!< use the monolithic accelerated instruction handler */
     
-    kI8080SystemOptsAll         = 0b11      /*!< all options enabled */
+    kI8080SystemOptsAll             = 0b11      /*!< all options enabled */
 } I8080SystemOpts_t;
 
 /**
@@ -119,11 +119,17 @@ typedef struct I8080System {
                                          the device bus */
     I8080SystemState_t      state;  /*!< the state in which the system is currently operating */
     I8080Microseconds       last_cycle; /*!< timestamp of the last-run cycle */
+    struct {
+        I8080Microseconds   user_cpu;
+        I8080Microseconds   sys_cpu;
+        long                n_swaps, io_i, io_o;
+    } rsrc_usage;                       /*!< filled-in after a call to I8080SystemRun() */
 #ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
     struct {
         pthread_mutex_t     lock;       /*!< sync lock used by the interrupt API components */
         bool                is_raised;  /*!< an interrupt has been raised */
         I8080Instr_t        opcode;     /*!< the single-byte opcode provided by the interrupting device */
+        uint64_t            count;      /*!< number of interrupts asserted */
     } interrupt;
 #endif
     const void              *aux_data; /*!< pointer to the extra bytes requested as part of this
@@ -264,5 +270,14 @@ bool I8080SystemStep(I8080SystemPtr sys8080, I8080CycleCount *cycles);
  * @param origin        the starting value of the PC
  */
 void I8080SystemRun(I8080SystemPtr sys8080, I8080Addr_t origin);
+
+/**
+ * Write a summary of the system to a text buffer
+ * Summarizes the state of \p sys8080 to the text stream \p tbuff.
+ *
+ * @param tbuff         the text buffer to which to write
+ * @param sys8080       pointer to the system to summarize
+ */
+void I8080SystemWriteToTextBuffer(I8080TextBufferRef tbuff, I8080SystemPtr sys8080);
 
 #endif /* __I8080SYSTEM_H__ */

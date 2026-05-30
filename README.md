@@ -189,6 +189,91 @@ In the early days of video gaming RAM was a precious resource, and having that m
 
 So why not take what I know of the NES PPU and use it to add a PPU to my 8080 emulator?  I settled on a fixed screen size of 128x64 pixels; 8x4 tiles (terminal windows pixels are rectangular, longer in the y-direction) with 2 BPP; 8 active color palettes (without restriction on some being for sprites and some for backgrounds); room for 32 of those 8x4 tiles; and room for 52 sprites.  By having just 32 tiles and 8 palettes, every tile reference can be an 8-bit value and there is no need for a separate attribute table for palette selection.  Likewise, sprites and backgrounds can make use of all 8 palettes, not just 4 each as in the NES.
 
+#### Bank-Switched Memory expansion
+
+What happens if a program needs more code or more data than the 64 KiB of RAM can hold?  The Apple IIe and IIc added a second bank of 64 KiB of RAM for a total of 128 KiB, but the 6502 was only capable of 16-bit addressing — so how did the other bank get accessed?  The short answer is that registers were altered to change which 64 KiB of RAM was attached to the address bus:  based on a "switch" the address `$2000` refers to two unique bytes of RAM.  The NES used bank-switching to, for example, switch which graphical tiles were visible in the system address space:  no need to copy 4 KiB of data around RAM, just alter what data in cartridge ROM is accessible at `$XXXX` on the system address bus.
+
+The `lib8080BSM` library implements a multi-bank memory-mapper that user code running in the emulator can switch via the 8080 device bus.  There are two ways to provision a BSM object of size `$pp00` mapped at `$PP00`:
+
+1. A single file is read into memory and divided into _N_ banks of `$pp` pages
+2. _N_ files are read into memory and each acts as a bank of `$pp` pages
+
+A device i/o channel is associated with the BSM:  reading the channel (e.g. `IN 04h`) sets the accumulator to the index of the in-scope bank, moving the desired bank index to the accumulator and writing to the channel (e.g. `OUT 04h`) will put that bank in-scope for subsequent memory access.  Consider the following example program:
+
+```
+                ORG 0400h
+                
+                LXI     D, 0B000h       ; DE <= BSM is mapped at $B000-$C000
+                LXI     B, 00000h       ; BC <= $0000
+-:              LDAX    D               ; A <= (DE)
+                ADD     C               ; A <= A + C
+                MOV     C, A            ; C <= A = A + C (C += (DE))
+                MVI     A, 00h          ; A <= $00
+                ADC     B               ; A <= A + B
+                MOV     B, A            ; B <= A = A + B (B += CY)
+                INX     D               ; DE <= DE + 1
+                MOV     A, D            ; A <= D
+                CPI     0C0h            ; Check if the high-byte in DE has hit $C0
+                JZ      +               ; We've reached $C000, all done with the mapped region
+                CPI     0B8h            ; Check if the high-byte in DE is half-way through
+                JNZ     -               ; Not there yet, go add the next byte into BC
+                MOV     A, E            ; Check if DE is $B800
+                CPI     00h
+                JNZ     -               ; Nope, do the next iteration of the summing
+                MVI     A, 01h          ; DE is currently $B800, time to
+                OUT     12h             ; switch to bank 1!
+                JMP     -               ; Continue summing...
++:              HLT
+```
+
+This code sums 4096 8-bit integers into the 16-bit BC register.  The first 2048 bytes come from bank 0, the rest from bank 1 of the BSM mapped at `$B000` in the emulator.  Let me create the two banks:
+
+```bash
+$ for dummy in $(seq 0 4095); do printf "%b" '\0x01' >> ones; done
+$ for dummy in $(seq 0 4095); do printf "%b" '\0x02' >> twos; done
+```
+
+If I create a BSM that combines these two files as two 4096-byte banks, the program above should add 1 2048 times then add 2 2048 times:  (2048 x 1) + (2048 x 2) = 6144 = `$1800`:
+
+```bash
+$ i8e8e -P 0x0400 -S 0x0000 --load=bsm-demo.bin@0x400 -A --bsm 0xB0+0x10#18:ones:twos
+
+Resource usage in system runloop: u_cpu=0.001189, s_cpu=3e-06, swaps=0, io[i]=0, io[o]=0
+
+ ____________________________________________________________________________________________
+| [B]=[0x18|24 |24  | ] [C]=[0x00|0  |0   | ]   [BC]=[0x1800|6144 |6144  ]         A       C |
+| [D]=[0xC0|192|-64 | ] [E]=[0x00|0  |0   | ]   [DE]=[0xC000|49152|-16384]   S Z - C - P - Y |
+| [H]=[0x00|0  |0   | ] [L]=[0x00|0  |0   | ]   [HL]=[0x0000|0    |0     ]   =============== |
+| [F]=[0x40|64 |64  |@] [A]=[0xC0|192|-64 | ]  [PSW]=[0x40C0|16576|16576 ]   0 1 0 0 0 0 1 0 |
+|                                               [PC]=[0x0427|1063 |1063  ]                   |
+| [CYCLS]=[0x00000004D625][    158482 µs]       [SP]=[0x0000|0    |0     ]           [*]INTE |
+|____________________________________________________________________________________________|
+I8080Device[$00] [←0x00000000|0x00000000→] BYTES  "tty"
+I8080Device[$12] [←0x00000000|0x00000001→] BYTES  "bank-switched-memory"
+I8080Device[$FF] [           |0x00000000→] BYTES  "stderr"
+I8080Mem[$0000..$03FF] : unused
+I8080Mem[$0400..$04FF] : allocated RAM
+I8080Mem[$0500..$AFFF] : unused
+I8080Mem[$B000..$BFFF] : mapper 0x6000013e0238 "bank-switched-memory"
+I8080Mem[$C000..$FFFF] : unused
+```
+
+If the bank-switch `MVI A, 01h` is changed to `MVI A, 00h` we will remain in bank 0 ("ones") and can expect the sum to be (2048 x 1) + (2048 x 1) = 4096 = `$1000`:
+
+```bash
+$ ../../build/i8e8e/i8e8e -P 0x0400 -S 0x0000 --load=bsm-demo.bin@0x400 -A --bsm 0xB0+0x10#18:ones:twos
+   :
+| [B]=[0x10|16 |16  | ] [C]=[0x00|0  |0   | ]   [BC]=[0x1000|4096 |4096  ]         A       C |
+```
+
+The BSM library can create in-memory representations of banks by allocate-and-fill **or** by using `mmap()` to map the original files themselves into the emulator's virtual address space.  The `i8e8e` emulator uses the `-m`/`--rom-map-mode` mode _at the time the `-b`/`--bsm` option is used on the command line_ to dictate which method is used to move the file data into memory:
+
+```bash
+$ ../../build/i8e8e/i8e8e -P 0x0400 -S 0x0000 -m mmap --load=bsm-demo.bin@0x400 -A --bsm 0xB0+0x10#18:ones:twos
+   :
+| [B]=[0x10|16 |16  | ] [C]=[0x00|0  |0   | ]   [BC]=[0x1000|4096 |4096  ]         A       C |
+```
+
 ##### Registers
 
 The first 16 bytes of the mapped address region act as registers.  This discussion assumes the mapper has been associated with the page at `$8000`.

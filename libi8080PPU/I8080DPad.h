@@ -24,36 +24,6 @@ typedef enum __attribute__((packed)) {
     kI8080DPadBitsA         = 0b10000000,
 } I8080DPadBits_t;
 
-/**
- * A simple d-pad controller payload
- * A byte read from this input device has this layout.
- * A bit that is set indicates the button is pressed.
- */
-typedef union __attribute__((packed)) {
-    uint8_t         bitmap;
-    struct {
-#ifdef BITS_BIG_ENDIAN
-    uint8_t         d_right : 1;
-    uint8_t         d_left : 1;
-    uint8_t         d_down : 1;
-    uint8_t         d_up : 1;
-    uint8_t         start : 1;
-    uint8_t         select : 1;
-    uint8_t         b : 1;
-    uint8_t         a : 1;
-#else
-    uint8_t         a : 1;
-    uint8_t         b : 1;
-    uint8_t         select : 1;
-    uint8_t         start : 1;
-    uint8_t         d_up : 1;
-    uint8_t         d_down : 1;
-    uint8_t         d_left : 1;
-    uint8_t         d_right : 1;
-#endif
-    };
-} I8080DPad_t;
-
 /** 
  * I/O input device definition for a simple d-pad controller
  * featuring four directional buttons, two action buttons,

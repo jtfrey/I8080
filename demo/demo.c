@@ -28,28 +28,29 @@ uint8_t     prgrm[] = {
 /* LOOP:      */
 /* 1015       */0xDB, 0x00,         /* IN      #0          ; Read from stdin                */
 /* 1017       */0xFE, 0xFF,         /* CPI     #$FF        ; EOF?                           */
-/* 1019       */0xCA, 0x33, 0x10,   /* JZ      DONE        ; Yep, exit the program          */
+/* 1019       */0xCA, 0x35, 0x10,   /* JZ      DONE        ; Yep, exit the program          */
 /* 101C       */0xFE, 0x04,         /* CPI     #$04        ; Ctrl-D?                        */
-/* 101E       */0xCA, 0x33, 0x10,   /* JZ      DONE        ; Yep, exit the program          */
+/* 101E       */0xCA, 0x35, 0x10,   /* JZ      DONE        ; Yep, exit the program          */
 /* 1021       */0xFE, 0x61,         /* CPI     #$61        ; Character == 0x61 ('a')        */
 /* 1023       */0xFA, 0x2E, 0x10,   /* JM      OUTPUT      ; Character < 0x61               */
 /* 1026       */0xFE, 0x7B,         /* CPI     #$7B        ; Character == 0x7B ('z' + 1)    */
 /* 1028       */0xF2, 0x2E, 0x10,   /* JP      OUTPUT      ; Character >= 0x7B              */
-/* 102B       */0xCD, 0x38, 0x10,   /* CALL    UC          ; Call uppercase subroutine      */
+/* 102B       */0xCD, 0x3A, 0x10,   /* CALL    UC          ; Call uppercase subroutine      */
 
 /* OUTPUT:    */
-/* 102E       */0xD3, 0x0A,         /* OUT     #10         ; Write the char to stderr       */
-/* 1030       */0xC3, 0x15, 0x10,   /* JMP     LOOP        ; Go back for another            */
+/* 102E       */0xD3, 0x05,         /* OUT     #05         ; Write the char to "output.txt" */
+/* 1030       */0xD3, 0x0A,         /* OUT     #10         ; ...and to stderr, too          */
+/* 1032       */0xC3, 0x15, 0x10,   /* JMP     LOOP        ; Go back for another            */
 /* DONE:      */
-/* 1033:      */0xF1,               /* POP      PSW                                         */
-/* 1034:      */0xE1,               /* POP      HL                                          */
-/* 1035:      */0xD1,               /* POP      DE                                          */
-/* 1036:      */0xC1,               /* POP      BC                                          */
-/* 1037       */0x76,               /* HLT                 ; Terminate the program          */
+/* 1035:      */0xF1,               /* POP      PSW                                         */
+/* 1036:      */0xE1,               /* POP      HL                                          */
+/* 1037:      */0xD1,               /* POP      DE                                          */
+/* 1038:      */0xC1,               /* POP      BC                                          */
+/* 1039       */0x76,               /* HLT                 ; Terminate the program          */
 
 /* UC:        */
-/* 1038       */0xEE, 0x20,         /* XRI     #$20        ; Convert to uppercase...        */
-/* 103A       */0xC9                /* RET                                                  */
+/* 103A       */0xEE, 0x20,         /* XRI     #$20        ; Convert to uppercase...        */
+/* 103C       */0xC9                /* RET                                                  */
 
     };
     
@@ -101,9 +102,9 @@ main()
     
     // Run the program:
     do {
-        bool    did_fail = I8080SystemStep(sys8080, NULL);
+        bool    did_fail = ! I8080SystemStep(sys8080, NULL);
         
-        if ( did_fail ) break;
+        if ( did_fail ){ printf("BORK\n"); break;}
         instr_num++;
     } while ( I8080SystemIsRunning(sys8080->state) );
     

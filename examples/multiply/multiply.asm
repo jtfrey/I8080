@@ -3,10 +3,21 @@
 
                 org     0400h
 
-
-                mvi     e, M1
+                mvi     h, 0
+inner3:         mvi     l, 0
+inner2:         mvi     c, 0
+inner:          mvi     b, 0
+main:           mvi     e, M1
                 mvi     d, M2
                 call    mltalg3
+                dcr     b
+                jp      main
+                dcr     c
+                jp      inner
+                dcr     l
+                jp      inner2
+                dcr     h
+                jp      inner3
                 hlt
 
 

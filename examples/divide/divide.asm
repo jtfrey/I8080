@@ -2,10 +2,22 @@
                 include "params.inc"
 
                 org 0400h
-                
+
+                mvi     h, 0
+inner3:         mvi     l, 0
+inner2:         mvi     c, 0
+inner:          mvi     b, 0
+main:           mvi     e, DENOMINATOR
                 mvi     d, NUMERATOR
-                mvi     e, DENOMINATOR
                 call    div
+                dcr     b
+                jp      main
+                dcr     c
+                jp      inner
+                dcr     l
+                jp      inner2
+                dcr     h
+                jp      inner3
                 hlt
 
 

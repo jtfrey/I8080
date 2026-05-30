@@ -222,6 +222,133 @@ I8080MemWriteToTextBuffer(
     }
 }
 
+//
+
+static inline
+uint8_t
+I8080MemCoreDumpTestZeroes(
+    uint8_t     *ptr
+)
+{
+    uint8_t     cumulative_or = *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    cumulative_or |= *ptr++;
+    return (cumulative_or | *ptr) == 0x00;
+}
+
+void
+I8080MemCoreDump(
+    I8080MemRef             mem,
+    I8080MemCoreDumpKind_t  core_kind,
+    FILE                    *stream
+)
+{
+    I8080MemPage_t          tmp_page;
+    
+    switch ( core_kind ) {
+        case kI8080MemCoreDumpKindText: {
+            I8080MemPrivate_t   *MEM = (I8080MemPrivate_t*)mem;
+            
+            I8080Addr_t         page_s = 0, page_e = 1;
+            int                 page_s_kind = PAGE_KIND(page_s),
+                                page_e_kind;
+            
+            while ( true ) {
+                bool            should_switch = true;
+                
+                if ( page_e < 256 ) {
+                    page_e_kind = PAGE_KIND(page_e);
+                    if ( page_e_kind == page_s_kind ) {
+                        should_switch = ! ((page_e_kind != kI8080MemPrintMapper) || (mem->mapper_refs[page_s] == mem->mapper_refs[page_e]));
+                    }
+                }
+                if ( should_switch ) {
+                    // Pages page_s through page_e - 1 can be summarized:
+                    switch ( page_s_kind ) {
+                        case kI8080MemPrintEmptyPage:
+                            fprintf(stream, "$%02hX00: [E] 00 00 00 00 00 00 00 00    00 00 00 00 00 00 00 00\n"
+                                            " *\n"
+                                            "$%02hXF0: [E] 00 00 00 00 00 00 00 00    00 00 00 00 00 00 00 00\n",
+                                    page_s, page_e - 1);
+                            break;
+                        case kI8080MemPrintMapper:
+                            fprintf(stream, "$%02hX00: [M] 00 00 00 00 00 00 00 00    00 00 00 00 00 00 00 00\n"
+                                            " *\n"
+                                            "$%02hXF0: [M] 00 00 00 00 00 00 00 00    00 00 00 00 00 00 00 00\n",
+                                    page_s, page_e - 1);
+                            break;
+                        case kI8080MemPrintAllocated: {
+                            uint32_t        addr = (page_s << 8), end_addr = (page_e << 8);
+                            uint32_t        zeroes_addr;
+                            bool            is_zeroes = false;
+                            uint8_t         *ptr;
+                            
+                            while ( addr < end_addr ) {
+                                if ( (addr & 0x00FF) == 0 ) ptr = &mem->pages[page_s++]->bytes[0];
+                                if ( I8080MemCoreDumpTestZeroes(ptr) ) {
+                                    if ( ! is_zeroes ) {
+                                        is_zeroes = true;
+                                        zeroes_addr = addr;
+                                    }
+                                } else {
+                                    if ( is_zeroes ) {
+                                        // There was a zero range up until this 16-bytes:
+                                        fprintf(stream, "$%04hX: [A] 00 00 00 00 00 00 00 00    00 00 00 00 00 00 00 00\n"
+                                                        " *\n"
+                                                        "$%04hX: [A] 00 00 00 00 00 00 00 00    00 00 00 00 00 00 00 00\n",
+                                                zeroes_addr, addr - 16);
+                                        is_zeroes = false;
+                                    }
+                                    fprintf(stream, "$%04hX: [A] %02hhX %02hhX %02hhX %02hhX %02hhX %02hhX %02hhX %02hhX    %02hhX %02hhX %02hhX %02hhX %02hhX %02hhX %02hhX %02hhX\n",
+                                        addr, ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7],
+                                        ptr[8], ptr[9], ptr[10], ptr[11], ptr[12], ptr[13], ptr[14], ptr[15]);
+                                }
+                                ptr += 16, addr += 16;
+                            }
+                            if ( is_zeroes ) {
+                                fprintf(stream, "$%04hX: [A] 00 00 00 00 00 00 00 00    00 00 00 00 00 00 00 00\n"
+                                                " *\n"
+                                                "$%04hX: [A] 00 00 00 00 00 00 00 00    00 00 00 00 00 00 00 00\n",
+                                        zeroes_addr, addr - 16);
+                            }
+                            break;
+                        }
+                    }
+                    page_s = page_e;
+                    page_s_kind = page_e_kind;
+                }
+                if ( page_e == 256 ) break;
+                page_e++;
+            }
+            break;
+        }
+        case kI8080MemCoreDumpKindBinary: {
+            I8080Addr_t     addr = 0x0000;
+            
+            do {
+                uint8_t     *p = &tmp_page.bytes[0];
+                do {
+                    *p++ = I8080MemRead(mem, addr++);
+                } while ( addr & 0x00FF );
+                fwrite(&tmp_page, sizeof(tmp_page), 1, stream);
+            } while ( addr );
+            break;
+        }
+    }
+}
+
 #undef PAGE_KIND
 
 //
@@ -430,7 +557,7 @@ I8080MemROMRead(
     I8080MemROMContext_t    *ROM = (I8080MemROMContext_t*)context;
     
     addr -= range.base;
-    *byte = ( addr < ROM->rom_size ) ? ROM->rom_bytes[addr] : 0x00;
+    *byte = ( addr < ROM->rom_image->mem_size ) ? *(uint8_t*)(ROM->rom_image->mem_bytes + addr) : 0x00;
     return true;
 }
 
@@ -460,18 +587,7 @@ I8080MemROMShutdown(
 )
 {
     I8080MemROMContext_t    *ROM = (I8080MemROMContext_t*)context;
-    
-    switch ( ROM->rom_type ) {
-        case kI8080MemROMTypePtr:
-        case kI8080MemROMTypeAlloc:
-            break;
-        case kI8080MemROMTypeMMap:
-#ifdef HAS_MMAP
-            munmap((void*)ROM->rom_bytes, ROM->rom_size);
-#endif
-            break;
-    }
-    free((void*)ROM);
+    I8080HostMemoryRelease(ROM->rom_image);
 }
 
 //
@@ -485,334 +601,3 @@ const I8080MemMapperCallbacks __I8080MemROMCallbacks = {
             .shutdown = I8080MemROMShutdown
         };
 const I8080MemMapperCallbacks *I8080MemROMCallbacks = &__I8080MemROMCallbacks;
-
-//
-#pragma mark -
-//
-
-I8080MemROMContextPtr
-I8080MemROMContextWithBytes(
-    const void          *bytes,
-    size_t              bytes_len,
-    bool                should_copy,
-    I8080Addr_t         page_count
-)
-{
-    I8080MemROMContext_t    *new_ROM = NULL;
-    size_t              alloc_len = bytes_len;
-    
-    if ( bytes_len == 0 && page_count == 0 ) {
-        ERROR("Could not create ROM image with both zero bytes and zero pages!");
-        return NULL;
-    }
-    if ( bytes_len == 0 ) {
-        // page_count MUST be set, this is a prospective allocation
-        // not backed by bytes (yet):
-        alloc_len = 256 * page_count;
-    }
-    else {
-        if ( page_count == 0 ) {
-            page_count = (bytes_len + 255) / 256;
-        }
-        else if ( page_count * 256 < bytes_len ) {
-            alloc_len = 256 * page_count;
-        }
-    }
-    
-    if ( ! should_copy && bytes ) {
-        new_ROM = (I8080MemROMContext_t*)calloc(1, sizeof(I8080MemROMContext_t));
-        if ( new_ROM ) {
-            new_ROM->rom_type = kI8080MemROMTypePtr;
-            new_ROM->rom_size = alloc_len;
-            new_ROM->page_count = page_count;
-            new_ROM->rom_bytes = bytes;
-        } else {
-            ERROR("Unable to allocate wrapped-pointer ROM image (errno=%d)", errno);
-        }
-    } else {
-        size_t          obj_size = sizeof(I8080MemROMContext_t) + alloc_len;
-        
-        new_ROM = (I8080MemROMContext_t*)calloc(1, obj_size);
-        if ( new_ROM ) {
-            new_ROM->rom_type = kI8080MemROMTypeAlloc;
-            new_ROM->rom_size = alloc_len;
-            new_ROM->page_count = page_count;
-            new_ROM->rom_bytes = (void*)new_ROM + sizeof(I8080MemROMContext_t);
-            if ( bytes ) memcpy((void*)new_ROM->rom_bytes, bytes, alloc_len);
-        } else {
-            ERROR("Unable to allocate new buffered ROM image (errno=%d)", errno);
-        }
-    }
-    return new_ROM;
-    
-}
-
-//
-
-I8080MemROMContextPtr
-I8080MemROMContextWithFilePtr(
-    FILE        *fptr,
-    size_t      bytes_len,
-    I8080Addr_t page_count
-)
-{
-    I8080MemROMContext_t    *new_ROM = NULL;
-    struct stat             finfo;
-    off_t                   whence = ftello(fptr);
-    
-    if ( fstat(fileno(fptr), &finfo ) == 0 ) {
-        off_t       bytes_in_file = finfo.st_size - whence;
-        
-        if ( bytes_in_file <= 0 ) {
-            ERROR("Could not create mmap'ed ROM image, at the end of file");
-            return NULL;
-        }
-        // Validate/fill-in the src_length and page_count:
-        if ( bytes_len > bytes_in_file ) {
-            WARNING("File containing mmap'ed ROM image is of size %1$lld, requested %2$lld; using %1$lld", bytes_in_file, bytes_len);
-            bytes_len = bytes_in_file;
-        }
-        if ( bytes_len == 0 ) {
-            if ( page_count > 0 ) {
-                if ( 256 * page_count < bytes_in_file ) {
-                    bytes_len = 256 * page_count;
-                } else {
-                    bytes_len = bytes_in_file;
-                }
-            } else {
-                bytes_len = (bytes_in_file < 0x10000) ? bytes_in_file : 0x10000;
-                page_count = (bytes_len + 255) / 256;
-            }
-        }
-        else {
-            if ( page_count > 0 ) {
-                if ( 256 * page_count < bytes_len ) {
-                    bytes_len = 256 * page_count;
-                }
-            } else {
-                page_count = (bytes_len + 255) / 256;
-            }
-        }
-        if ( bytes_len ) {
-            size_t      obj_size = sizeof(I8080MemROMContext_t) + bytes_len;
-            
-            new_ROM = (I8080MemROMContext_t*)calloc(1, obj_size);
-            if ( new_ROM ) {
-                ssize_t     actual_len;
-                
-                new_ROM->rom_type = kI8080MemROMTypeAlloc;
-                new_ROM->rom_size = bytes_len;
-                new_ROM->page_count = page_count;
-                new_ROM->rom_bytes = (void*)new_ROM + sizeof(I8080MemROMContext_t);
-                actual_len = fread((void*)new_ROM->rom_bytes, 1, bytes_len, fptr);
-                if ( actual_len != bytes_len ) {
-                    ERROR("Failure to read full %lld B from ROM image", bytes_len);
-                    free((void*)new_ROM);
-                    new_ROM = NULL;
-                }
-            } else {
-                ERROR("Unable to allocate %lld B ROM image (errno=%d)", bytes_len, errno);
-            }
-        } else {
-            ERROR("Calculated ROM size is 0 B, will not create ROM image");
-        }
-    } else {
-        ERROR("Could not stat source FILE, will not create ROM image (errno=%d)", errno);
-    }
-    return new_ROM;
-}
-
-/**
- * Allocate a ROM image mapper context with the contents of a file
- * Create a \ref I8080MemROMContext_t that wraps at most \p 64 KiB read from the file
- * at \p filepath.  A memory buffer is created as part of the \ref I8080MemROMContext_t
- * to hold the bytes.
- * @param filepath      the file from which the ROM bytes should be read
- * @param page_count    the nominal number of pages the ROM image should occupy;
- *                      passing a value of zero will read up to 64 KiB from the  file
- *                      and round-up the page count accordingly; passing a non-zero
- *                      value will limit the read to that many pages of data
- * @return              pointer to the allocated and initialized I8080MemROMContext_t, NULL
- *                      on error
- */
-I8080MemROMContextPtr
-I8080MemROMContextWithFile(
-    const char  *filepath,
-    I8080Addr_t page_count
-)
-{
-    I8080MemROMContext_t    *new_ROM = NULL;
-    struct stat             finfo;
-    
-    if ( stat(filepath, &finfo ) == 0 ) {
-        off_t       bytes_in_file = finfo.st_size;
-        
-        if ( bytes_in_file <= 0 ) {
-            ERROR("Could not create ROM image, file `%s` contains no data", filepath);
-            return NULL;
-        }
-        if ( page_count == 0 ) {
-            if ( bytes_in_file > 0x10000 ) bytes_in_file = 0x10000;
-            page_count = (bytes_in_file + 255) / 256;
-        } else {
-            if ( page_count * 256 < bytes_in_file ) bytes_in_file = page_count * 256;
-        }
-        if ( bytes_in_file ) {
-            FILE                *fptr = fopen(filepath, "rb");
-            
-            if ( fptr ) {
-                new_ROM = I8080MemROMContextWithFilePtr(fptr, bytes_in_file, page_count);
-                fclose(fptr);
-            } else {
-                ERROR("Unable to open file `%s` for ROM image read (errno=%d)", filepath, errno);
-            }
-        } else {
-            ERROR("Calculated ROM size of `%s` is 0 B, will not create ROM image", filepath);
-        }
-    } else {
-        ERROR("Could not stat `%s`, will not create ROM image (errno=%d)", filepath, errno);
-    }
-    return new_ROM;
-}
-
-//
-
-I8080MemROMContextPtr
-I8080MemROMContextWithByteRangeInFile(
-    const char          *filepath,
-    off_t               src_offset,
-    size_t              src_length,
-    I8080Addr_t         page_count
-)
-{
-    I8080MemROMContext_t    *new_ROM = NULL;
-    struct stat             finfo;
-    
-    if ( stat(filepath, &finfo ) == 0 ) {
-        off_t       bytes_in_file = finfo.st_size - src_offset;
-        
-        if ( bytes_in_file <= 0 ) {
-            ERROR("Could not create ROM image, offset %lld is beyond the end of file", src_offset);
-            return NULL;
-        }
-        // Validate/fill-in the src_length and page_count:
-        if ( src_length > bytes_in_file ) {
-            WARNING("File containing ROM image is of size %1$lld, requested %2$lld; using %1$lld", bytes_in_file, src_length);
-            src_length = bytes_in_file;
-        }
-        if ( src_length == 0 ) {
-            if ( page_count > 0 ) {
-                if ( 256 * page_count < bytes_in_file ) {
-                    src_length = 256 * page_count;
-                } else {
-                    src_length = bytes_in_file;
-                }
-            } else {
-                src_length = (bytes_in_file < 0x10000) ? bytes_in_file : 0x10000;
-                page_count = (src_length + 255) / 256;
-            }
-        }
-        else {
-            if ( page_count > 0 ) {
-                if ( 256 * page_count < src_length ) {
-                    src_length = 256 * page_count;
-                }
-            } else {
-                page_count = (src_length + 255) / 256;
-            }
-        }
-        if ( src_length ) {
-            FILE                *fptr = fopen(filepath, "rb");
-            
-            if ( fptr ) {
-                new_ROM = I8080MemROMContextWithFilePtr(fptr, src_length, page_count);
-                fclose(fptr);
-            } else {
-                ERROR("Unable to open file `%s` for ROM image read (errno=%d)", filepath, errno);
-            }
-        } else {
-            ERROR("Calculated ROM size of `%s` is 0 B, will not create ROM image", filepath);
-        }
-    } else {
-        ERROR("Could not stat `%s`, will not create ROM image (errno=%d)", filepath, errno);
-    }
-    return new_ROM;
-}
-
-//
-
-I8080MemROMContextPtr
-I8080MemROMContextWithMappedFile(
-    int             src_fd,
-    off_t           src_offset,
-    size_t          src_length,
-    I8080Addr_t     page_count
-)
-{
-#ifndef HAS_MMAP
-
-    ERROR("The mmap() ROM type is not supported on this system");
-    return NULL;
-
-#else
-    I8080MemROMContext_t    *new_ROM = NULL;
-    struct stat             finfo;
-    
-    if ( fstat(src_fd, &finfo ) == 0 ) {
-        off_t       bytes_in_file = finfo.st_size - src_offset;
-        
-        if ( bytes_in_file <= 0 ) {
-            ERROR("Could not create mmap'ed ROM image, offset %lld is beyond the end of file", src_offset);
-            return NULL;
-        }
-        // Validate/fill-in the src_length and page_count:
-        if ( src_length > bytes_in_file ) {
-            WARNING("File containing mmap'ed ROM image is of size %1$lld, requested %2$lld; using %1$lld", bytes_in_file, src_length);
-            src_length = bytes_in_file;
-        }
-        if ( src_length == 0 ) {
-            if ( page_count > 0 ) {
-                if ( 256 * page_count < bytes_in_file ) {
-                    src_length = 256 * page_count;
-                } else {
-                    src_length = bytes_in_file;
-                }
-            } else {
-                src_length = (bytes_in_file < 0x10000) ? bytes_in_file : 0x10000;
-                page_count = (src_length + 255) / 256;
-            }
-        }
-        else {
-            if ( page_count > 0 ) {
-                if ( 256 * page_count < src_length ) {
-                    src_length = 256 * page_count;
-                }
-            } else {
-                page_count = (src_length + 255) / 256;
-            }
-        }
-        if ( src_length ) {
-            void        *segment = mmap(NULL, src_length, PROT_READ, MAP_PRIVATE | MAP_FILE, src_fd, src_offset);
-            
-            if ( segment != MAP_FAILED ) {
-                new_ROM = (I8080MemROMContext_t*)calloc(1, sizeof(I8080MemROMContext_t));
-                if ( new_ROM ) {
-                    new_ROM->rom_type = kI8080MemROMTypeMMap;
-                    new_ROM->rom_size = src_length;
-                    new_ROM->page_count = page_count;
-                    new_ROM->rom_bytes = (uint8_t*)segment;
-                } else {
-                    ERROR("Unable to allocate %hd B mmap'ed ROM image (errno=%d)", src_length, errno);
-                }
-            } else {
-                ERROR("Could not mmap fd %d, will not create ROM image (errno=%d)", src_fd, errno);
-            }
-        } else {
-            ERROR("Calculated ROM size of fd %d is 0 B, will not create mmap'ed ROM image", src_fd);
-        }
-    } else {
-        ERROR("Could not stat fd %d, will not create mmap'ed ROM image (errno=%d)", src_fd, errno);
-    }
-    return new_ROM;
-#endif
-}

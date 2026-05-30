@@ -271,10 +271,10 @@ I8080PPURenderThread(
             if ( ppu->sys8080 && ppu->mapped.rgstrs.inte_opcode ) I8080SystemRaiseInterrupt(ppu->sys8080, ppu->mapped.rgstrs.inte_opcode);
             
             // Set background color and prepare for refresh:
-            redrawwin(ppu->wndw);
+            //redrawwin(ppu->wndw);
             
-            // Zero-out the status register:
-            ppu->mapped.rgstrs.ppu_status = 0;
+            // Initialize the status register:
+            ppu->mapped.rgstrs.ppu_status = ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeMapSelect;
             
             if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderEnable ) {
                 if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderBackground ) {

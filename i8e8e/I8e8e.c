@@ -12,6 +12,7 @@
 #include "I8080System.h"
 #include "I8080Logging.h"
 #include "I8e8eMemObj.h"
+#include "I8e8eBSMObj.h"
 #include "I8e8eFileDeviceObj.h"
 #include "I8080CGA.h"
 #include "I8080PPU.h"
@@ -53,6 +54,9 @@ static struct option i8e8e_options[] = {
         { "rom-map-mode",   required_argument,  0,  'm' },
 #endif
         { "unmapped",       required_argument,  0,  'U' },
+        { "bsm",            required_argument,  0,  'b' },
+        { "core",           required_argument,  0,  'D' },
+        { "core-kind",      required_argument,  0,  'k' },
         { "pc",             required_argument,  0,  'P' },
         { "PC",             required_argument,  0,  kI8e8eOptAlternatePC },
         { "sp",             required_argument,  0,  'S' },
@@ -74,7 +78,7 @@ static const char *i8e8e_options_str =
 #ifdef HAS_MMAP
         "m:"
 #endif
-        "U:P:S:2Af:t:T:c:g:d:p";
+        "U:b:D:k:P:S:2Af:t:T:c:g:d:p";
 
 void
 usage(
@@ -100,6 +104,12 @@ usage(
             "    -U/--unmapped <unmapped-seg>   the given range of memory addresses are\n"
             "                                   made unwritable and a static value is\n"
             "                                   returned on read\n"
+            "    -b/--bsm <bsm-spec>            add a bank-swapped memory expander in the\n"
+            "                                   specified page range\n"
+            "    -D/--core <filename>           when the emulator exits, dump the system memory\n"
+            "                                   to <filename>\n"
+            "    -k/--core-kind <core-kind>     select which kind of core dump to make; default\n"
+            "                                   is binary\n"
             "    -P/--pc/--PC <addr>            on start, set the program counter (PC)\n"
             "                                   to this address (default: $0000)\n"
             "    -S/--sp/--SP <addr>            on start, set the stack pointer (SP)\n"
@@ -110,6 +120,10 @@ usage(
             "                                   as possible\n"
             "    -A/--accel-instrs              use the monolithic, accelerated instruction\n"
             "                                   handler\n"
+            "    -r/--rl-rsrc-report            print a summary of resource usage to stdout\n"
+            "                                   after the system transitions out of the running\n"
+            "                                   state; otherwise the report gets logged at the\n"
+            "                                   INFO level\n"
             "    -f/--file-device <file-dev>    connect a file to the device bus of the\n"
             "                                   emulator\n"
             "    -t/--tty <tty-options>         configure TTY options\n"
@@ -135,6 +149,10 @@ usage(
             "        expressed in dollar-sign notation or with a '0x' prefix for\n"
             "        hexedecimal values, or as an octal or decimal value.\n"
             "\n"
+            "    <page> = $XX | 0xXX | 0NNN | N\n\n"
+            "        The 64 KiB address space is arranged in pages of 256 bytes; there are\n"
+            "        256 such pages from $00…$FF.\n"
+            "\n"
             "    <offset>, <len>, <byte> = { $X… | 0xX… | 0N… | N… }\n\n"
             "        An <offset>, <len>, or <byte> are a hexadecimal, octal, or decimal value\n"
             "\n"
@@ -158,6 +176,23 @@ usage(
             "        An unmapped segment is created for which <byte> will be returned on\n"
             "        read and writes will be ignored.  The address range starts at the first\n"
             "        <addr> and goes through and including <addr2>\n"
+            "\n"
+            "    <bsm-spec> = <page>{+<page>}{#<dev-id>}:<file>{+W|+R}{:<file>{+W|+R}…}\n"
+            "        A bank-swapped memory expander combines multiple data sets existing in the\n"
+            "        same page range of system memory; an i/o device channel provides the user\n"
+            "        program the ability to select which bank of data the page range accesses.\n"
+            "        The leading <page> indicates at which page the BSM should be mapped, and\n"
+            "        {+<page>} is how many pages it should occupy (defaulting to 1 page).  If only\n"
+            "        one <file> is provided, its entire contents will be broken into #<page>\n"
+            "        selectable banks.  If multiple <file> elements are provided, then each file\n"
+            "        will act as a selectable bank, with at most #<page> pages of data usable\n"
+            "        inside the emulator.  The {+W|+R} flag is an optional suffix on the <file>\n"
+            "        that indicates whether or not the bank should be RAM or ROM (ROM is default).\n"
+            "        Note that the selected <rom-mode> will affect how the file data are moved into\n"
+            "        memory (as allocated buffers or mmap'ed).\n\n"
+            "        The optional #<dev-id> indicates on what input/output channels the BSM's\n"
+            "        bank select should be connected; if not provided, the device bus will assign\n"
+            "        the next-available device ids at registration.\n"
             "\n"
             "    <file-dev> = <filepath>:<i|o|io>{#<dev-id>}{@<mode>}\n\n"
             "        A file at the given <filepath> is connected to the device bus of\n"
@@ -207,6 +242,11 @@ usage(
             "        the CGA color palette functionality, so the rendering of the tiles and\n"
             "        sprites usually requires a specific <palette-id> be used.  The default\n"
             "        is the kI8080CGAPaletteNES2C02 palette.\n"
+            "\n"
+            "    <core-kind> = text | binary\n"
+            "        The kind of core dump to generate.  A text-based dump abbreviates ranges\n"
+            "        of zeroes and omits mapped pages, whereas a binary dump will be the full\n"
+            "        64 KiB of system memory.\n"
             "\n"
             "  environment variables:\n\n"
             "    I8E8E_VERBOSITY        the initial logging level; any abbreviation of\n\n"
@@ -377,30 +417,6 @@ I8e8eCGAParse(
 
 //
 
-typedef enum {
-    kI8e8eROMMappingModeAlloc,
-    kI8e8eROMMappingModeMMap
-} I8e8eROMMappingMode_t;
-
-bool
-I8e8eROMMappingModeParse(
-    const char              *in_str,
-    I8e8eROMMappingMode_t   *out_mode
-)
-{
-    if ( strcasecmp(in_str, "alloc") == 0 ) {
-        *out_mode = kI8e8eROMMappingModeAlloc;
-        return true;
-    }
-    if ( strcasecmp(in_str, "mmap") == 0 ) {
-        *out_mode = kI8e8eROMMappingModeMMap;
-        return true;
-    }
-    return false;
-}
-
-//
-
 static struct I8080DeviceTTYOptsPair {
     const char  *tty_option;
     int         flag;
@@ -498,10 +514,13 @@ main(
     bool                        have_dpad = false;
     I8e8eMemObj_t               *memobjs = NULL, *memobjs_tail = NULL;
     I8e8eROMMappingMode_t       rom_mapmode = kI8e8eROMMappingModeAlloc;
+    I8e8eBSMObj_t               *bsmobjs = NULL, *bsmobjs_tail = NULL;
     I8e8eFileDeviceObj_t        *filedevobjs = NULL, *filedevobjs_tail = NULL;
     I8080Addr_t                 timer_addr;
     I8080TimerContextPtr        timer = NULL;
     bool                        have_timer = false;
+    I8080MemCoreDumpKind_t      core_kind = kI8080MemCoreDumpKindBinary;
+    const char                  *want_core_dump = NULL;
     char                        *str;
     
     signal(SIGINT, handle_sigint);
@@ -635,6 +654,36 @@ main(
                 }
                 break;
             }
+            
+            case 'b': {
+                I8e8eBSMObj_t  *bsmobj = I8e8eBSMObjParse(rom_mapmode, optarg);
+                
+                if ( ! bsmobj ) exit(EINVAL);
+                if ( bsmobjs_tail ) {
+                    bsmobjs_tail->link = bsmobj;
+                    bsmobjs_tail = bsmobj;
+                } else {
+                    bsmobjs = bsmobjs_tail = bsmobj;
+                }
+                break;
+            }
+            
+            case 'D':
+                want_core_dump = optarg;
+                break;
+                
+            case 'k':
+                if ( strcasecmp(optarg, "text") == 0 ) {
+                    core_kind = kI8080MemCoreDumpKindText;
+                }
+                else if ( strcasecmp(optarg, "binary") == 0 ) {
+                    core_kind = kI8080MemCoreDumpKindBinary;
+                }
+                else {
+                    ERROR("Invalid core dump kind: %s", optarg);
+                    exit(EINVAL);
+                }
+                break;
         
             case 'P':
             case kI8e8eOptAlternatePC:
@@ -660,6 +709,7 @@ main(
             case 'A':
                 INFO("Enabling accelerated instruction handling in I8080System");
                 system_opts |= kI8080SystemOptsAccelInstr;
+                break;
                 break;
             
             case 't':
@@ -757,91 +807,13 @@ main(
     I8080DevBusRegisterDevice(sys8080->devbus, 0xFF, &devStderr, NULL);
     
     // Register all file devices:
-    I8e8eFileDeviceObj_t    *this_filedev_obj = filedevobjs;
-    
-    while ( this_filedev_obj ) {
-        switch ( this_filedev_obj->mode ) {
-            case kI8080DeviceModeInput:
-                this_filedev_obj->device = *I8080DeviceFileIn;
-                break;
-            case kI8080DeviceModeOutput:
-                this_filedev_obj->device = *I8080DeviceFileOut;
-                break;
-            case kI8080DeviceModeInputOutput:
-                this_filedev_obj->device = *I8080DeviceFileInOut;
-                break;
-        }
-        this_filedev_obj->device_context.variant = kI8080DeviceFileVariantPath;
-        this_filedev_obj->device_context.path.filepath = this_filedev_obj->filepath;
-        this_filedev_obj->device_context.path.mode = this_filedev_obj->fopen_mode;
-        if ( ! I8080DevBusRegisterDevice(sys8080->devbus, this_filedev_obj->dev_id,
-                    &this_filedev_obj->device, &this_filedev_obj->device_context) )
-        {
-            exit(EINVAL);
-        }
-        this_filedev_obj = this_filedev_obj->link;
-    }
+    if ( filedevobjs && ! I8e8eFileDeviceObjRegister(filedevobjs, sys8080) ) exit(EINVAL);
 
     // Walk the memory objects to attach ROMs and unmapped segments:
-    I8e8eMemObj_t   *this_mem_obj = memobjs;
+    if ( memobjs && ! I8e8eMemObjPreBootRegister(memobjs, rom_mapmode, sys8080) ) exit(EINVAL);
     
-    while ( this_mem_obj ) {
-        I8080AddrRange_t        paged_addr = I8080AddrRangeToPages(this_mem_obj->mapper_data.addr_range);
-        
-        switch ( this_mem_obj->obj_type ) {
-            case kI8e8eMemObjTypeData:
-                break;
-                
-            case kI8e8eMemObjTypeROM: {
-                I8080MemROMContextPtr   rom_context;
-                switch ( rom_mapmode ) {
-                    case kI8e8eROMMappingModeAlloc: {
-                        rom_context = I8080MemROMContextWithByteRangeInFile(this_mem_obj->file_path, this_mem_obj->file_offset, this_mem_obj->file_length, paged_addr.length);
-                        break;
-                    }
-                    
-                    case kI8e8eROMMappingModeMMap: {
-                        int     rom_fd = open(this_mem_obj->file_path, O_RDONLY);
-                        
-                        if ( rom_fd < 0 ) {
-                            ERROR("Unable to open ROM file for mmap (errno=%d)", errno);
-                            exit(errno);
-                        }
-                        rom_context = I8080MemROMContextWithMappedFile(rom_fd, this_mem_obj->file_offset,
-                                            (this_mem_obj->file_length > 0xFFFF) ? 0xFFFF : this_mem_obj->file_length, paged_addr.length);
-                        close(rom_fd);
-                        break;
-                    }
-                    
-                }
-                if ( ! rom_context ) {
-                    ERROR("Unable to allocate ROM context (errno=%d)", errno);
-                    exit(errno);
-                }
-                this_mem_obj->mapper_data.callbacks = *I8080MemROMCallbacks;
-                this_mem_obj->mapper_data.context = rom_context;
-                rom_context->rom_name = this_mem_obj->file_path;
-                if ( ! I8080MemRegisterMapper(sys8080->sysmem, &this_mem_obj->mapper_data) ) {
-                    exit(ENOMEM);
-                }
-                INFO("Created new %s ROM image @ $%04hX - $%04hX", 
-                    (rom_mapmode == kI8e8eROMMappingModeAlloc) ? "allocated buffer" : "memory-mapped",
-                    this_mem_obj->mapper_data.addr_range.base, I8080AddrRangeEndAddr(this_mem_obj->mapper_data.addr_range));
-                break;
-            }
-            case kI8e8eMemObjTypeUnmapped: {
-                this_mem_obj->mapper_data.callbacks = *I8080MemUnmappedSegmentCallbacks;
-                this_mem_obj->mapper_data.context = (const void*)(uintptr_t)this_mem_obj->unmapped_byte;
-                if ( ! I8080MemRegisterMapper(sys8080->sysmem, &this_mem_obj->mapper_data) ) {
-                    exit(ENOMEM);
-                }
-                INFO("Created new unmapped segment @ $%04hX - $%04hX (byte = 0x%02hhX)", 
-                        this_mem_obj->mapper_data.addr_range.base, I8080AddrRangeEndAddr(this_mem_obj->mapper_data.addr_range), this_mem_obj->unmapped_byte);
-                break;
-            }
-        }
-        this_mem_obj = this_mem_obj->link;
-    }
+    // BSMs?
+    if ( bsmobjs && ! I8e8eBSMObjRegister(bsmobjs, sys8080) ) exit(EINVAL);
     
     // Was CGA requested?
     if ( have_cga ) {
@@ -902,57 +874,8 @@ main(
     // Set power on:
     I8080SystemSetPowerState(sys8080, true);
     
-    // Walk the memory objects to load data now:
-    this_mem_obj = memobjs;
-    while ( this_mem_obj ) {
-        switch ( this_mem_obj->obj_type ) {
-            case kI8e8eMemObjTypeData: {
-                FILE        *fptr = fopen(this_mem_obj->file_path, "rb");
-                bool        full_length = (this_mem_obj->file_length == 0);
-                I8080Addr_t addr = this_mem_obj->mapper_data.addr_range.base;
-                size_t      n_bytes = 0;
-                
-                if ( this_mem_obj->mapper_data.addr_range.length > 0 ) {
-                    // An address range was provided, does it limit the read?
-                    if ( full_length || (this_mem_obj->mapper_data.addr_range.length < this_mem_obj->file_length) ) {
-                        this_mem_obj->file_length = this_mem_obj->mapper_data.addr_range.length;
-                        full_length = false;
-                    } 
-                }
-                
-                if ( ! fptr ) {
-                    ERROR("Unable to open file `%s` to load data to system memory (errno=%d)",
-                            this_mem_obj->file_path, errno);
-                    exit(errno);
-                }
-                if ( this_mem_obj->file_offset ) {
-                    if ( fseeko(fptr, this_mem_obj->file_offset, SEEK_SET) ) {
-                        ERROR("Unable to move to offset %lld in `%s` to load data to system memory (errno=%d)",
-                            this_mem_obj->file_offset, this_mem_obj->file_path, errno);
-                        exit(errno);
-                    }
-                }
-                while ( full_length || (this_mem_obj->file_length > 0) ) {
-                    uint8_t     byte;
-                    
-                    if ( fread(&byte, 1, 1, fptr) != 1 ) break;
-                    I8080MemWrite(sys8080->sysmem, addr++, byte);
-                    this_mem_obj->file_length--, n_bytes++;
-                }
-                if ( ! full_length && this_mem_obj->file_length > 0 ) {
-                    ERROR("Unable to read all bytes from `%s` (%lld unread)", this_mem_obj->file_path, this_mem_obj->file_length);
-                    exit(EINVAL);
-                }
-                fclose(fptr);
-                INFO("Added %lld bytes to system memory starting at $%04hX\n", n_bytes, this_mem_obj->mapper_data.addr_range.base);
-                break;
-            }
-            case kI8e8eMemObjTypeROM:
-            case kI8e8eMemObjTypeUnmapped: 
-                break;
-        }
-        this_mem_obj = this_mem_obj->link;
-    }
+    // Walk the memory objects to load data into system memory now:
+    if ( memobjs && ! I8e8eMemObjPostBootRegister(memobjs, rom_mapmode, sys8080) ) exit(EINVAL);
     
     sys8080->rgstrs.SP = SP;
     INFO("Stack pointer (SP) set to $%04hX", SP);
@@ -962,14 +885,26 @@ main(
     
     I8080TextBufferRef  summary = I8080TextBufferCreate();
     
-    I8080RegistersWriteToTextBuffer(summary, &sys8080->rgstrs);
-    I8080DevBusWriteToTextBuffer(summary, sys8080->devbus);
-    I8080MemWriteToTextBuffer(summary, sys8080->sysmem);
+    I8080SystemWriteToTextBuffer(summary, sys8080);
+    
     if ( timer ) I8080TimerContextWriteToTextBuffer(summary, timer);
     
     if ( have_cga ) I8080CGAShutdown();
     I8080SystemSetPowerState(sys8080, false);
+    
+    if ( want_core_dump ) {
+        FILE        *core_stream = fopen(want_core_dump, "wb");
+        if ( core_stream ) {
+            I8080MemCoreDump(sys8080->sysmem, core_kind, core_stream);
+            fclose(core_stream);
+        }
+    }
+    
     I8080SystemDestroy(sys8080);
+    
+    if ( memobjs ) I8e8eMemObjDestroy(memobjs);
+    if ( bsmobjs ) I8e8eBSMObjDestroy(bsmobjs);
+    if ( filedevobjs ) I8e8eFileDeviceObjDestroy(filedevobjs);
     
     printf("\n%s\n", I8080TextBufferGetCStringPtr(summary));
     I8080TextBufferDestroy(summary);

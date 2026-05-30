@@ -15,6 +15,7 @@
 
 #include "I8080Config.h"
 #include "I8080TextBuffer.h"
+#include "I8080HostMemory.h"
 
 /**
  * Address in memory
@@ -394,6 +395,13 @@ void I8080MemPrint(FILE *stream, I8080MemRef mem);
  */
 void I8080MemWriteToTextBuffer(I8080TextBufferRef tbuff, I8080MemRef mem);
 
+typedef enum {
+    kI8080MemCoreDumpKindText,
+    kI8080MemCoreDumpKindBinary
+} I8080MemCoreDumpKind_t;
+
+void I8080MemCoreDump(I8080MemRef mem, I8080MemCoreDumpKind_t core_kind, FILE *stream);
+
 /**
  * Copy external bytes into the system memory object
  * The memory buffer of \p bytes_len bytes located at \p bytes
@@ -574,37 +582,19 @@ extern const I8080MemMapperCallbacks *I8080MemMirroringCallbacks;
 extern const I8080MemMapperCallbacks *I8080MemROMCallbacks;
 
 /**
- * ROM image memory mapper type
- * There are three types of ROM image available:
- *
- *     - a wrapper to an existing pointer and size
- *     - a buffer allocated as part of the context
- *       and filled with bytes
- *     - a pointer associated with a file that mmap()
- *       has mapped into the native memory system
- */
-typedef enum {
-    kI8080MemROMTypePtr = 0,    /*!< the ROM wraps an existing pointer of specified size */
-    kI8080MemROMTypeAlloc,      /*!< the ROM includes a buffer holding the image bytes */
-    kI8080MemROMTypeMMap        /*!< the ROM wraps a pointer returned by mmap() */
-} I8080MemROMType_t;
-
-/**
  * ROM image memory mapper context
- * An instance of this structure must be allocated and passed to
- * the \ref I8080Mem object when the ROM mapper is registered.  It
- * describes the ROM image that will be mapped into the emulated
- * system memory space.
+ * An instance of this structure must be passed to the \ref I8080Mem
+ * object when the ROM mapper is registered.  It describes the ROM
+ * image that will be mapped into the emulated system memory space.
  */
 typedef struct {
-    I8080MemROMType_t   rom_type;   /*!< the type of ROM image this mapper represents */
     const char          *rom_name;  /*!< a name for the ROM image (e.g. name of the source file); this
                                          should be set by the caller and it is the caller's responsibility
                                          to handle eventual disposal of the string */
-    size_t              rom_size;   /*!< the actual size of the ROM image */
     I8080Addr_t         page_count; /*!< the number of pages the image nominally occupies in the
                                          emulated system's memory space */
-    const uint8_t       *rom_bytes; /*!< pointer to the bytes comprising the ROM image */
+    I8080HostMemoryRef  rom_image;  /*!< the memory containing the ROM image data; on shutdown, the
+                                         object will be released via \ref I8080HostMemoryRelease() */
 } I8080MemROMContext_t;
 
 /**
@@ -612,100 +602,25 @@ typedef struct {
  */
 typedef I8080MemROMContext_t * I8080MemROMContextPtr;
 
-/**
- * Allocate a ROM image mapper context wrapping bytes in memory
- * If \p should_copy is false, then the \p bytes_len bytes at \p bytes is simply
- * wrapped by a \ref I8080MemROMContext_t; if \p should_copy is true, then the
- * \ref I8080MemROMContext_t is allocated with capacity to hold a copy of \p bytes.
- *
- * If \p bytes is NULL then a buffer of \p bytes_len is allocated and the \p rom_image
- * field in the returned \p I8080MemROMContextPtr can be modified by the caller.
- * @param bytes         pointer to the bytes comprising the ROM; if NULL, a buffer
- *                      will be created and zeroed and the caller can modify it as
- *                      desired
- * @param bytes_len     number of bytes in the ROM image, capped at 64 KiB
- * @param should_copy   if false then the returned \ref I8080MemROMContextPtr merely wraps
- *                      the \p bytes pointer -- which means \p bytes cannot be free'd
- *                      by the caller while the \p I8080MemROMContextPtr is in-use!
- * @param page_count    the nominal number of pages the ROM image should occupy; if
- *                      zero, then \p bytes_len is used to find the nearest page
- *                      boundary; if non-zero, the minimum size between \p bytes_len and
- *                      \p page_count dictates how large the segment will be
- * @return              pointer to the allocated and initialized I8080MemROMContext_t,
- *                      NULL on error
- */
-I8080MemROMContextPtr I8080MemROMContextWithBytes(const void *bytes, size_t bytes_len, bool should_copy, I8080Addr_t page_count);
+static inline
+I8080Addr_t
+I8080MemROMPageCountForByteSize(
+    size_t      byte_count
+)
+{
+    int         pages = (byte_count + 255) / 256;
+    return ( pages > 0xFF ) ? 0xFF : pages;
+}
 
-/**
- * Allocate a ROM image mapper context with bytes from an open file
- * Create a \ref I8080MemROMContext_t that wraps at most \p bytes_len bytes read from the
- * open FILE, \p fptr.  A memory buffer is created as part of the \ref I8080MemROMContext_t
- * to hold the bytes.
- * @param fptr          the file from which the bytes will be read
- * @param bytes_len     number of bytes in the ROM image; zero (0) implies the full contents
- *                      of the file OR at most 64 KiB
- * @param page_count    the nominal number of pages the ROM image should occupy;  passing a
- *                      value of zero will round-up \p bytes_len to the nearest page boundary;
- *                      if non-zero, the minimum size between \p bytes_len and \p page_count
- *                      dictates how large the segment will be (if \p bytes_len was zero, the
- *                      size from the file metadata will be used for the determination)
- * @return              pointer to the allocated and initialized I8080MemROMContext_t, NULL
- *                      on error
- */
-I8080MemROMContextPtr I8080MemROMContextWithFilePtr(FILE *fptr, size_t bytes_len, I8080Addr_t page_count);
-
-/**
- * Allocate a ROM image mapper context with the contents of a file
- * Create a \ref I8080MemROMContext_t that wraps at most \p 64 KiB read from the file
- * at \p filepath.  A memory buffer is created as part of the \ref I8080MemROMContext_t
- * to hold the bytes.
- * @param filepath      the file from which the ROM bytes should be read
- * @param page_count    the nominal number of pages the ROM image should occupy;
- *                      passing a value of zero will read up to 64 KiB from the  file
- *                      and round-up the page count accordingly; passing a non-zero
- *                      value will limit the read to that many pages of data
- * @return              pointer to the allocated and initialized I8080MemROMContext_t, NULL
- *                      on error
- */
-I8080MemROMContextPtr I8080MemROMContextWithFile(const char *filepath, I8080Addr_t page_count);
-
-/**
- * Allocate a ROM image mapper context with a range of bytes from a file
- * Similar to \ref I8080MemROMWithFile(), but rather than reading bytes from
- * the start of the file the read can be repositioned using the \p offset
- * argument.  At most 64 KiB will be read.
- * @param filepath      the file from which the ROM bytes should be read
- * @param offset        offset at which the ROM should be read from the
- *                      file
- * @param length        number of bytes to read from the file; zero (0) implies the full
- *                      contents of the file OR at most 64 KiB
- * @param page_count    the nominal number of pages the ROM image should occupy;  passing a
- *                      value of zero will round-up \p length to the nearest page boundary;
- *                      if non-zero, the minimum size between \p length and \p page_count
- *                      dictates how large the segment will be (if \p length was zero, the
- *                      size from the file metadata will be used for the determination)
- * @return              pointer to the allocated and initialized I8080MemROMContext_t, NULL
- *                      on error
- */
-I8080MemROMContextPtr I8080MemROMContextWithByteRangeInFile(const char *filepath, off_t src_offset, size_t src_length, I8080Addr_t page_count);
-
-/**
- * Allocate a ROM image mapper context by mapping a file into virtual memory
- * Bytes in the file associated with file descriptor \p fd are mapped into the
- * native system's virtual address space.  The byte range (up to 64 KiB) starting
- * at \p offset in the file is in-scope.
- * @param src_fd        the file descriptor that will be passed to mmap()
- * @param offset        offset at which the file should be mmap'ed
- * @param length        number of bytes to mmap from the file; zero (0) implies the full
- *                      contents of the file OR at most 64 KiB
- * @param page_count    the nominal number of pages the ROM image should occupy;  passing a
- *                      value of zero will round-up \p length to the nearest page boundary;
- *                      if non-zero, the minimum size between \p length and \p page_count
- *                      dictates how large the segment will be (if \p length was zero, the
- *                      size from the file metadata will be used for the determination)
- * @return              pointer to the allocated and initialized I8080MemROMContext_t,
- *                      NULL on error
- */
-I8080MemROMContextPtr I8080MemROMContextWithMappedFile(int src_fd, off_t src_offset, size_t src_length, I8080Addr_t page_count);
+static inline
+I8080Addr_t
+I8080MemROMPageCountForSizes(
+    size_t      byte_count,
+    I8080Addr_t page_count
+)
+{
+    if ( byte_count == 0 ) return page_count;
+    return I8080MemROMPageCountForByteSize(byte_count);
+}
 
 #endif /* __I8080MEMORY_H__ */

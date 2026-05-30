@@ -14,6 +14,7 @@ target_sources(i8e8e
     PRIVATE
         I8e8e.c
         I8e8eMemObj.c
+        I8e8eBSMObj.c
         I8e8eFileDeviceObj.c
 
     PUBLIC
@@ -21,6 +22,7 @@ target_sources(i8e8e
         TYPE HEADERS
         FILES
             I8e8eMemObj.h
+            I8e8eBSMObj.h
             I8e8eFileDeviceObj.h)
 target_compile_definitions(i8e8e
     PRIVATE
@@ -31,4 +33,5 @@ target_link_libraries(i8e8e
         i8080
         i8080CGA
         i8080Timer
+        i8080BSM
         i8080PPU)

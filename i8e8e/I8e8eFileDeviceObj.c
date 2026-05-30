@@ -53,13 +53,17 @@ I8e8eFileDeviceObjParse(
         switch ( *in_str++ ) {
             case '#': {
                 char        *endptr;
-                long        v = strtol(in_str, &endptr, 0);
+                int         base = 0;
+                long        v;
+                
+                if ( *in_str == '$' ) in_str++, base=16;
+                v = strtol(in_str, &endptr, base);
                 
                 if ( endptr == in_str ) {
                     ERROR("Invalid device id in file device specification: %s", in_str_orig);
                     return NULL;
                 }
-                if ( v > 0xFF ) {
+                if ( v & ~0xFFUL ) {
                     ERROR("Device id 0x%X exceeds maximum of 0xFF: %s", in_str_orig);
                     return NULL;
                 }
@@ -102,7 +106,53 @@ I8e8eFileDeviceObjParse(
     filedev_obj->filepath[filepath_len] = '\0';
     filedev_obj->mode = dev_mode;
     filedev_obj->dev_id = dev_id;
-    memcpy(filedev_obj->fopen_mode, fopen_mode, sizeof(fopen_mode));
+    strncpy(filedev_obj->fopen_mode, fopen_mode, sizeof(fopen_mode));
     return filedev_obj;
 }
 
+//
+
+bool
+I8e8eFileDeviceObjRegister(
+    I8e8eFileDeviceObj_t    *file_devs,
+    I8080SystemPtr          sys8080
+)
+{
+    while ( file_devs ) {
+        switch ( file_devs->mode ) {
+            case kI8080DeviceModeInput:
+                file_devs->device = *I8080DeviceFileIn;
+                break;
+            case kI8080DeviceModeOutput:
+                file_devs->device = *I8080DeviceFileOut;
+                break;
+            case kI8080DeviceModeInputOutput:
+                file_devs->device = *I8080DeviceFileInOut;
+                break;
+        }
+        file_devs->device_context.variant = kI8080DeviceFileVariantPath;
+        file_devs->device_context.path.filepath = file_devs->filepath;
+        file_devs->device_context.path.mode = file_devs->fopen_mode;
+        if ( ! I8080DevBusRegisterDevice(sys8080->devbus, file_devs->dev_id,
+                    &file_devs->device, &file_devs->device_context) )
+        {
+            return false;
+        }
+        file_devs = file_devs->link;
+    }
+    return true;
+}
+
+//
+
+void
+I8e8eFileDeviceObjDestroy(
+    I8e8eFileDeviceObj_t    *file_devs
+)
+{
+    while ( file_devs ) {
+        I8e8eFileDeviceObj_t    *next = file_devs->link;
+        free((void*)file_devs);
+        file_devs = next;
+    }
+}

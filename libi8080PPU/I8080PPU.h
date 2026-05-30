@@ -296,6 +296,7 @@ typedef enum __attribute__((packed)) {
  * program controlling it.  This register is read-only.
  */
 typedef enum __attribute__((packed)) {
+    kI8080PPUStatusMapInUse             = 0b00000001,       /*!< 0: rendering tile map 0, 1:rendering tile map 1 */
     kI8080PPUStatusSpriteOverflow       = 0b01000000,       /*!< Set during a render cycle if the per-line sprite
                                                                  limit is exceeded; reset at the beginning of each
                                                                  rendering cycle */

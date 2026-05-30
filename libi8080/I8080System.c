@@ -12,6 +12,7 @@
 
 #include "I8080System.h"
 #include "I8080Logging.h"
+#include <sys/resource.h>
 
 //
 
@@ -271,11 +272,12 @@ static I8080CycleCount I8080CycleCountByOpcode[256] = {
             11,    /* CM adr */
              4,    /* *NOP* */
              7,    /* CPI d8 */
-            11    /* RST 7 */
+            11     /* RST 7 */
     };
 
 //
 
+static
 I8080CycleCount
 I8080InstrHandlerMonolithic(
     I8080SystemPtr  sys8080,
@@ -287,20 +289,30 @@ I8080InstrHandlerMonolithic(
     uint16_t        o16;
     uint32_t        o32;
     
-    #define O8()        (I8080InstrFetch(sys8080))
-    #define O16()       (I8080InstrFetch(sys8080) | ((uint16_t)I8080InstrFetch(sys8080) << 8))
-    #define RADDR(A)    (I8080MemRead(sys8080->sysmem, (A)))
-    #define WADDR(A, B) (I8080MemWrite(sys8080->sysmem, (A), (B)))
-    #define RM()        (I8080MemRead(sys8080->sysmem, sys8080->rgstrs.HL))
-    #define WM(B)       (I8080MemWrite(sys8080->sysmem, sys8080->rgstrs.HL, (B)))
-    #define PUSH(W)     (I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (W) >> 8), \
-                         I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (W) & 0xFF))
-    #define POP()       (I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++) | \
-                         ((uint16_t)I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++) << 8))
+    #define O8()            (I8080InstrFetch(sys8080))
+    #define O16()           (I8080InstrFetch(sys8080) | ((uint16_t)I8080InstrFetch(sys8080) << 8))
+    #define RADDR(A)        (I8080MemRead(sys8080->sysmem, (A)))
+    #define WADDR(A, B)     (I8080MemWrite(sys8080->sysmem, (A), (B)))
+    #define RADDRW(A)       (I8080MemRead(sys8080->sysmem, (A)) | (I8080MemRead(sys8080->sysmem, (A)+1) << 8))
+    #define WADDRW(A, W)    (I8080MemWrite(sys8080->sysmem, (A), (W) & 0xFF), I8080MemWrite(sys8080->sysmem, (A)+1, (W) >> 8))
+    #define RM()            (I8080MemRead(sys8080->sysmem, sys8080->rgstrs.HL))
+    #define WM(B)           (I8080MemWrite(sys8080->sysmem, sys8080->rgstrs.HL, (B)))
+    #define PUSH(W)         (I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (W) >> 8), \
+                             I8080MemWrite(sys8080->sysmem, --sys8080->rgstrs.SP, (W) & 0xFF))
+    #define POP()           (I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++) | \
+                             ((uint16_t)I8080MemRead(sys8080->sysmem, sys8080->rgstrs.SP++) << 8))
     
     DEBUG("$%02hhX => %s", opcode, I8080InstrSummaryTable[opcode].symbolic);
     
     switch ( opcode ) {
+    
+#pragma mark - I/O
+        case 0xD3:  /* OUT */
+            I8080DevBusWriteDevice(sys8080->devbus, O8(), sys8080->rgstrs.A);
+            break;
+        case 0xDB:  /* IN */
+            sys8080->rgstrs.A = I8080DevBusReadDevice(sys8080->devbus, O8());
+            break;
     
 #pragma mark - Jump
         case 0xC3:  /* JMP */
@@ -336,7 +348,7 @@ I8080InstrHandlerMonolithic(
     
 #pragma mark - Call
         case 0xCD:  /* CALL */
-            PUSH(sys8080->rgstrs.PC), sys8080->rgstrs.PC = O16();
+            o16 = O16(), PUSH(sys8080->rgstrs.PC), sys8080->rgstrs.PC = o16;
             break;
         case 0xC4:  /* CNZ */
             o16 = O16(); if ( ! sys8080->rgstrs.Z ) cycles += 6, PUSH(sys8080->rgstrs.PC), sys8080->rgstrs.PC = o16;
@@ -456,7 +468,7 @@ I8080InstrHandlerMonolithic(
             break;
         case 0xFE:  /* CPI D8 */
             o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~O8() + 1);
-            sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
+            sys8080->rgstrs.Z = o16 ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
             sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
 
@@ -598,7 +610,7 @@ I8080InstrHandlerMonolithic(
             sys8080->rgstrs.A = RADDR(sys8080->rgstrs.DE);
             break;
         case 0x2A:  /* LHLD <addr> */
-            sys8080->rgstrs.HL = RADDR(O16());
+            o16 = O16(), sys8080->rgstrs.HL = RADDRW(o16);
             break;
         case 0x3A:  /* LDA <addr> */
             sys8080->rgstrs.A = RADDR(O16());
@@ -611,7 +623,7 @@ I8080InstrHandlerMonolithic(
             WADDR(sys8080->rgstrs.DE, sys8080->rgstrs.A);
             break;
         case 0x22:  /* SHLD <addr> */
-            WADDR(O16(), sys8080->rgstrs.HL);
+            o16 = O16(), WADDRW(o16, sys8080->rgstrs.HL);
             break;
         case 0x32:  /* STA <addr> */
             WADDR(O16(), sys8080->rgstrs.A);
@@ -1499,6 +1511,7 @@ I8080SystemRaiseInterrupt(
         if ( sys8080->rgstrs.INTE ) {
             sys8080->interrupt.is_raised = true;
             sys8080->interrupt.opcode = interrupt_opcode;
+            sys8080->interrupt.count++;
             sys8080->rgstrs.INTE = 0;
         }
         pthread_mutex_unlock(&sys8080->interrupt.lock);
@@ -1619,6 +1632,7 @@ I8080SystemStep(
                 }
                 sys8080->last_cycle = now;
             }
+            ok = true;
         }
         if ( cycles ) *cycles = elapsed;
     }
@@ -1634,10 +1648,131 @@ I8080SystemRun(
 )
 {
     if ( I8080SystemSetPC(sys8080, origin) ) {
-        do {
-            if ( ! I8080SystemStep(sys8080, NULL) ) break;
-        } while ( I8080SystemIsRunning(sys8080->state) );
+        struct rusage       res_start, res_end;
+        
+        getrusage(RUSAGE_SELF, &res_start);
+        if ( sys8080->options & kI8080SystemOptsAccelInstr ) {
+            if ( sys8080->options & kI8080SystemOpts2MHzClock ) {
+                while ( true ) {
+                    I8080CycleCount elapsed = 1;
+                    
+                    if ( I8080SystemIsReady(sys8080->state) ) {
+                        I8080Instr_t    instr;
+                        
+                        if ( ! I8080SystemIsRunning(sys8080->state) ) {
+                            sys8080->state |= kI8080SystemStateRunning;
+                            sys8080->last_cycle = I8080MicrosecondsMakeNow();
+                            INFO("System transitioned to running state");
+                        }
+                        if ( (sys8080->state & kI8080SystemStateStall) == 0 ) {
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+                            pthread_mutex_lock(&sys8080->interrupt.lock);
+                            
+                            if ( sys8080->interrupt.is_raised ) {
+                                instr = sys8080->interrupt.opcode;
+                                DEBUG("Interrupt instruction: 0x%02hhX", instr);
+                                sys8080->interrupt.is_raised = false;
+                            } else {
+                                instr = I8080InstrFetch(sys8080);
+                                DEBUG("Fetched instruction: 0x%02hhX", instr);
+                            }
+                            
+                            pthread_mutex_unlock(&sys8080->interrupt.lock);
+#else
+                            instr = I8080InstrFetch(sys8080);
+                            DEBUG("Fetched instruction: 0x%02hhX", instr);
+#endif
+
+                            elapsed = I8080InstrHandlerMonolithic(sys8080, instr);
+                            sys8080->rgstrs.CYCLS += elapsed;
+                            
+                            if ( ! I8080SystemIsRunning(sys8080->state) ) break;
+                        } else {
+                            sys8080->rgstrs.CYCLS += elapsed;
+                        }
+                    } else if ( sys8080->state & kI8080SystemStateBreak ) { 
+                        break;
+                    } else {
+                        sys8080->rgstrs.CYCLS += elapsed;
+                    }
+                    I8080Microseconds   now = I8080MicrosecondsMakeNow(),
+                                        dt = (sys8080->last_cycle + (double)elapsed * 0.5) - now;
+                    
+                    if ( dt > 0.0 ) {
+                        DEBUG("Sleeping for %.3f µs to fix clockspeed", dt);
+                        I8080TimingSleep(dt);
+                        now += dt;
+                    }
+                    sys8080->last_cycle = now;
+                }
+            } else {
+               while ( true ) {
+                    if ( I8080SystemIsReady(sys8080->state) ) {
+                        I8080Instr_t    instr;
+                        I8080CycleCount elapsed = 1;
+                        
+                        if ( ! I8080SystemIsRunning(sys8080->state) ) {
+                            sys8080->state |= kI8080SystemStateRunning;
+                            sys8080->last_cycle = I8080MicrosecondsMakeNow();
+                            INFO("System transitioned to running state");
+                        }
+                        if ( (sys8080->state & kI8080SystemStateStall) == 0 ) {
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+                            pthread_mutex_lock(&sys8080->interrupt.lock);
+                            
+                            if ( sys8080->interrupt.is_raised ) {
+                                instr = sys8080->interrupt.opcode;
+                                DEBUG("Interrupt instruction: 0x%02hhX", instr);
+                                sys8080->interrupt.is_raised = false;
+                            } else {
+                                instr = I8080InstrFetch(sys8080);
+                                DEBUG("Fetched instruction: 0x%02hhX", instr);
+                            }
+                            
+                            pthread_mutex_unlock(&sys8080->interrupt.lock);
+#else
+                            instr = I8080InstrFetch(sys8080);
+                            DEBUG("Fetched instruction: 0x%02hhX", instr);
+#endif
+                            elapsed = I8080InstrHandlerMonolithic(sys8080, instr);
+                            sys8080->rgstrs.CYCLS += elapsed;
+                            if ( ! I8080SystemIsRunning(sys8080->state) ) break;
+                        }
+                    }
+                }
+            }
+        } else {
+            do {
+                if ( ! I8080SystemStep(sys8080, NULL) ) break;
+            } while ( I8080SystemIsRunning(sys8080->state) );
+        }
+        getrusage(RUSAGE_SELF, &res_end);
+        
+        sys8080->rsrc_usage.user_cpu = (double)(res_end.ru_utime.tv_sec - res_start.ru_utime.tv_sec) + \
+                                            1e-6 * (res_end.ru_utime.tv_usec - res_start.ru_utime.tv_usec);
+        sys8080->rsrc_usage.sys_cpu = (double)(res_end.ru_stime.tv_sec - res_start.ru_stime.tv_sec) + \
+                                            1e-6 * (res_end.ru_stime.tv_usec - res_start.ru_stime.tv_usec);
+        sys8080->rsrc_usage.n_swaps = res_end.ru_nswap - res_start.ru_nswap;
+        sys8080->rsrc_usage.io_i = res_end.ru_inblock - res_start.ru_inblock;
+        sys8080->rsrc_usage.io_o = res_end.ru_oublock - res_start.ru_oublock;
     }
 }
 
+//
 
+void
+I8080SystemWriteToTextBuffer(
+    I8080TextBufferRef  tbuff,
+    I8080SystemPtr      sys8080
+)
+{
+    I8080TextBufferPrintf(tbuff, "Resource usage in system runloop: u_cpu=%g, s_cpu=%g, swaps=%ld, io[i]=%ld, io[o]=%ld\n",
+            sys8080->rsrc_usage.user_cpu, sys8080->rsrc_usage.sys_cpu,
+            sys8080->rsrc_usage.n_swaps, sys8080->rsrc_usage.io_i, sys8080->rsrc_usage.io_o);
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+    I8080TextBufferPrintf(tbuff, "Interrupts raised: %llu\n", sys8080->interrupt.count);
+#endif
+    I8080RegistersWriteToTextBuffer(tbuff, &sys8080->rgstrs);
+    I8080DevBusWriteToTextBuffer(tbuff, sys8080->devbus);
+    I8080MemWriteToTextBuffer(tbuff, sys8080->sysmem);
+}
