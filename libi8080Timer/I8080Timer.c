@@ -9,6 +9,8 @@
  */
 
 #include "I8080Timer.h"
+#include "I8080Logging.h"
+#include "I8080Timing.h"
 #include <pthread.h>
 #include <time.h>
 #include <sys/time.h>
@@ -215,11 +217,13 @@ I8080TimerContextTimerThread(
             case kI8080TimerEnableAutoReenable: {
                 bool        inner_loop = true;
                 while ( inner_loop ) {
-                    int     rc;
+                    I8080Microseconds   now = I8080MicrosecondsMakeNow();
+                    int                 rc;
                     
                     rc = pthread_cond_timedwait(&state->cond, &state->lock, &state->timeout);
                     if ( rc == ETIMEDOUT ) {
                         // Interrupt!!
+                        DEBUG("Timer %u fired @ ∆t = %g µs", timer_id, I8080MicrosecondsMakeNow() - now);
                         context->datetime.fired = timer_id;
                         if ( context->sys8080 ) I8080SystemRaiseInterrupt(context->sys8080, context->timers[timer_id].opcode);
                         if ( enable == kI8080TimerEnableOn ) {
@@ -229,6 +233,7 @@ I8080TimerContextTimerThread(
                         } else {
                             // Schedule next timeout, go around this loop again:
                             I8080TimerRegisterIntervalSetTimespec(context->timers[timer_id], &state->timeout);
+                            DEBUG("Rescheduled auto-reenabled timer %u", timer_id);
                         }
                     } else {
                         // Some sort of configurational change...
