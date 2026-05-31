@@ -88,6 +88,7 @@ set(LIBI8080_SOURCES
     I8080InstrHandlerRegPairs.c
     I8080InstrHandlerDirectAddr.c
     I8080InstrHandlerJump.c
+    I8080Disassembler.c
     I8080System.c)
 # Header files for the library:
 set(LIBI8080_HEADERS
@@ -107,6 +108,7 @@ set(LIBI8080_HEADERS
     I8080InstrHandlerRegPairs.h
     I8080InstrHandlerDirectAddr.h
     I8080InstrHandlerJump.h
+    I8080Disassembler.h
     I8080System.h
     I8080Timing.h)
 

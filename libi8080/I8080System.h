@@ -87,8 +87,8 @@ typedef enum {
 typedef enum {
     kI8080SystemOpts2MHzClock       = 0b1,      /*!< constrain runtime to 2 MHz */
     kI8080SystemOptsAccelInstr      = 0b10,     /*!< use the monolithic accelerated instruction handler */
-    
-    kI8080SystemOptsAll             = 0b11      /*!< all options enabled */
+    kI8080SystemOptsDisasmToFile    = 0b100,    /*!< running disassembly to an output file */
+    kI8080SystemOptsAll             = 0b111     /*!< all options enabled */
 } I8080SystemOpts_t;
 
 /**
@@ -132,6 +132,8 @@ typedef struct I8080System {
         uint64_t            count;      /*!< number of interrupts asserted */
     } interrupt;
 #endif
+    FILE                    *disasm_fptr; /*!< disassembly goes to stderr by default; consumer can set this
+                                               field to direct it elsewhere */
     const void              *aux_data; /*!< pointer to the extra bytes requested as part of this
                                                instance */
 } I8080System_t;

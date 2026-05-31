@@ -48,6 +48,7 @@ static struct option i8e8e_options[] = {
         { "verbose",        no_argument,        0,  'v' },
         { "quiet",          no_argument,        0,  'q' },
         { "logfile",        required_argument,  0,  'l' },
+        { "disasm",         optional_argument,  0,  'D' },
         { "load",           required_argument,  0,  'L' },
         { "rom",            required_argument,  0,  'R' },
 #ifdef HAS_MMAP
@@ -55,7 +56,7 @@ static struct option i8e8e_options[] = {
 #endif
         { "unmapped",       required_argument,  0,  'U' },
         { "bsm",            required_argument,  0,  'b' },
-        { "core",           required_argument,  0,  'D' },
+        { "core",           required_argument,  0,  'C' },
         { "core-kind",      required_argument,  0,  'k' },
         { "pc",             required_argument,  0,  'P' },
         { "PC",             required_argument,  0,  kI8e8eOptAlternatePC },
@@ -74,11 +75,11 @@ static struct option i8e8e_options[] = {
     };
 
 static const char *i8e8e_options_str = 
-        "hvql:L:R:"
+        "hvql:D:L:R:"
 #ifdef HAS_MMAP
         "m:"
 #endif
-        "U:b:D:k:P:S:2Af:t:T:c:g:d:p";
+        "U:b:C:k:P:S:2Af:t:T:c:g:d:p";
 
 void
 usage(
@@ -94,6 +95,11 @@ usage(
             "    -q/--quiet                     decrease logging level\n"
             "    -l/--logfile <log-dest>        redirect logging output to the destination;\n"
             "                                   new lines are appended to existing data\n"
+            "    -D/--disasm                    write running disassembly of the program\n"
+            "                                   to stderr\n"
+            "    --disasm=<filename>            write running disassembly of the program\n"
+            "                                   to the named file provided; the file is \n"
+            "                                   overwritten and not appended\n"
             "    -L/--load <bytes-in>           load bytes from a file into the system\n"
             "                                   system memory of the emulator\n"
             "    -R/--rom <bytes-in>            map bytes from from a file as a ROM\n"
@@ -521,6 +527,8 @@ main(
     bool                        have_timer = false;
     I8080MemCoreDumpKind_t      core_kind = kI8080MemCoreDumpKindBinary;
     const char                  *want_core_dump = NULL;
+    bool                        want_disasm = false;
+    const char                  *disasm_file = NULL;
     char                        *str;
     
     signal(SIGINT, handle_sigint);
@@ -606,6 +614,12 @@ main(
                 break;
             }
             
+            case 'D': {
+                system_opts |= kI8080SystemOptsDisasmToFile;
+                disasm_file = optarg;
+                break;
+            }
+            
             case 'L': {
                 I8e8eMemObj_t  *memobj = I8e8eMemObjParse(kI8e8eMemObjTypeData, optarg);
                 
@@ -668,7 +682,7 @@ main(
                 break;
             }
             
-            case 'D':
+            case 'C':
                 want_core_dump = optarg;
                 break;
                 
@@ -802,6 +816,11 @@ main(
         exit(errno);
     }
     
+    // File to attach for disassembly?
+    if ( disasm_file && (system_opts & kI8080SystemOptsDisasmToFile) ) {
+        sys8080->disasm_fptr = fopen(disasm_file, "w");
+    }
+    
     // Register stderr as output device #255:
     devStderr = *I8080DeviceStdError;
     I8080DevBusRegisterDevice(sys8080->devbus, 0xFF, &devStderr, NULL);
@@ -898,6 +917,10 @@ main(
             I8080MemCoreDump(sys8080->sysmem, core_kind, core_stream);
             fclose(core_stream);
         }
+    }
+    
+    if ( sys8080->disasm_fptr && (system_opts & kI8080SystemOptsDisasmToFile) ) {
+        fclose(sys8080->disasm_fptr);
     }
     
     I8080SystemDestroy(sys8080);

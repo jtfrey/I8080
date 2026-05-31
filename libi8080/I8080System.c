@@ -11,6 +11,7 @@
  */
 
 #include "I8080System.h"
+#include "I8080Disassembler.h"
 #include "I8080Logging.h"
 #include <sys/resource.h>
 
@@ -1350,6 +1351,7 @@ I8080SystemCreate(
         I8080DevBusRegisterDevice(sys8080->devbus, 0, &sys8080->tty, NULL);
         
         sys8080->state = kI8080SystemStateOff;
+        sys8080->disasm_fptr = stderr;
         
 #ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
         pthread_mutex_init(&sys8080->interrupt.lock, NULL);
@@ -1397,6 +1399,7 @@ I8080SystemCreateWithTTYContext(
         I8080DevBusRegisterDevice(sys8080->devbus, 0, &sys8080->tty, built_in_context);
         
         sys8080->state = kI8080SystemStateOff;
+        sys8080->disasm_fptr = stderr;
         
 #ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
         pthread_mutex_init(&sys8080->interrupt.lock, NULL);
@@ -1641,8 +1644,140 @@ I8080SystemStep(
 
 //
 
+static
 void
-I8080SystemRun(
+__I8080SystemRunWithDisasm(
+    I8080SystemPtr  sys8080,
+    I8080Addr_t     origin
+)
+{
+    if ( I8080SystemSetPC(sys8080, origin) ) {
+        struct rusage       res_start, res_end;
+        
+        getrusage(RUSAGE_SELF, &res_start);
+        if ( sys8080->options & kI8080SystemOptsAccelInstr ) {
+            if ( sys8080->options & kI8080SystemOpts2MHzClock ) {
+                while ( true ) {
+                    I8080CycleCount elapsed = 1;
+                    
+                    if ( I8080SystemIsReady(sys8080->state) ) {
+                        I8080FullInstrContext_t     instr;
+                        
+                        if ( ! I8080SystemIsRunning(sys8080->state) ) {
+                            sys8080->state |= kI8080SystemStateRunning;
+                            sys8080->last_cycle = I8080MicrosecondsMakeNow();
+                            INFO("System transitioned to running state");
+                        }
+                        if ( (sys8080->state & kI8080SystemStateStall) == 0 ) {
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+                            pthread_mutex_lock(&sys8080->interrupt.lock);
+                            
+                            if ( sys8080->interrupt.is_raised ) {
+                                instr.opcode = sys8080->interrupt.opcode;
+                                instr.is_inte = true;
+                                DEBUG("Interrupt instruction: 0x%02hhX", instr.opcode);
+                                sys8080->interrupt.is_raised = false;
+                            } else {
+                                I8080FullInstrContextFetch(&instr, sys8080->sysmem, &sys8080->rgstrs);
+                                DEBUG("Fetched instruction: 0x%02hhX", instr.opcode);
+                            }
+                            
+                            pthread_mutex_unlock(&sys8080->interrupt.lock);
+#else
+                            I8080FullInstrContextFetch(&instr, sys8080->sysmem, &sys8080->rgstrs);
+                            DEBUG("Fetched instruction: 0x%02hhX", instr);
+#endif
+
+                            instr.cycles = elapsed = I8080InstrHandlerMonolithic(sys8080, instr.opcode);
+                            sys8080->rgstrs.CYCLS += elapsed;
+                            
+                            I8080FullInstrContextDisassembleToFile(
+                                    sys8080->disasm_fptr ? sys8080->disasm_fptr : stderr,
+                                    &instr, sys8080->sysmem, &sys8080->rgstrs);
+                            
+                            if ( ! I8080SystemIsRunning(sys8080->state) ) break;
+                        } else {
+                            sys8080->rgstrs.CYCLS += elapsed;
+                        }
+                    } else if ( sys8080->state & kI8080SystemStateBreak ) { 
+                        break;
+                    } else {
+                        sys8080->rgstrs.CYCLS += elapsed;
+                    }
+                    I8080Microseconds   now = I8080MicrosecondsMakeNow(),
+                                        dt = (sys8080->last_cycle + (double)elapsed * 0.5) - now;
+                    
+                    if ( dt > 0.0 ) {
+                        DEBUG("Sleeping for %.3f µs to fix clockspeed", dt);
+                        I8080TimingSleep(dt);
+                        now += dt;
+                    }
+                    sys8080->last_cycle = now;
+                }
+            } else {
+               while ( true ) {
+                    if ( I8080SystemIsReady(sys8080->state) ) {
+                        I8080FullInstrContext_t     instr;
+                        I8080CycleCount             elapsed = 1;
+                        
+                        if ( ! I8080SystemIsRunning(sys8080->state) ) {
+                            sys8080->state |= kI8080SystemStateRunning;
+                            sys8080->last_cycle = I8080MicrosecondsMakeNow();
+                            INFO("System transitioned to running state");
+                        }
+                        if ( (sys8080->state & kI8080SystemStateStall) == 0 ) {
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+                            pthread_mutex_lock(&sys8080->interrupt.lock);
+                            
+                            if ( sys8080->interrupt.is_raised ) {
+                                instr.opcode = sys8080->interrupt.opcode;
+                                instr.is_inte = true;
+                                DEBUG("Interrupt instruction: 0x%02hhX", instr.opcode);
+                                sys8080->interrupt.is_raised = false;
+                            } else {
+                                I8080FullInstrContextFetch(&instr, sys8080->sysmem, &sys8080->rgstrs);
+                                DEBUG("Fetched instruction: 0x%02hhX", instr);
+                            }
+                            
+                            pthread_mutex_unlock(&sys8080->interrupt.lock);
+#else
+                            I8080FullInstrContextFetch(&instr, sys8080->sysmem, &sys8080->rgstrs);
+                            DEBUG("Fetched instruction: 0x%02hhX", instr);
+#endif
+                            instr.cycles = elapsed = I8080InstrHandlerMonolithic(sys8080, instr.opcode);
+                            sys8080->rgstrs.CYCLS += elapsed;
+                            
+                            I8080FullInstrContextDisassembleToFile(
+                                    sys8080->disasm_fptr ? sys8080->disasm_fptr : stderr,
+                                    &instr, sys8080->sysmem, &sys8080->rgstrs);
+                                    
+                            if ( ! I8080SystemIsRunning(sys8080->state) ) break;
+                        }
+                    }
+                }
+            }
+        } else {
+            do {
+                if ( ! I8080SystemStep(sys8080, NULL) ) break;
+            } while ( I8080SystemIsRunning(sys8080->state) );
+        }
+        getrusage(RUSAGE_SELF, &res_end);
+        
+        sys8080->rsrc_usage.user_cpu = (double)(res_end.ru_utime.tv_sec - res_start.ru_utime.tv_sec) + \
+                                            1e-6 * (res_end.ru_utime.tv_usec - res_start.ru_utime.tv_usec);
+        sys8080->rsrc_usage.sys_cpu = (double)(res_end.ru_stime.tv_sec - res_start.ru_stime.tv_sec) + \
+                                            1e-6 * (res_end.ru_stime.tv_usec - res_start.ru_stime.tv_usec);
+        sys8080->rsrc_usage.n_swaps = res_end.ru_nswap - res_start.ru_nswap;
+        sys8080->rsrc_usage.io_i = res_end.ru_inblock - res_start.ru_inblock;
+        sys8080->rsrc_usage.io_o = res_end.ru_oublock - res_start.ru_oublock;
+    }
+}
+
+//
+
+static
+void
+__I8080SystemRun(
     I8080SystemPtr  sys8080,
     I8080Addr_t     origin
 )
@@ -1756,6 +1891,20 @@ I8080SystemRun(
         sys8080->rsrc_usage.io_i = res_end.ru_inblock - res_start.ru_inblock;
         sys8080->rsrc_usage.io_o = res_end.ru_oublock - res_start.ru_oublock;
     }
+}
+
+//
+
+void
+I8080SystemRun(
+    I8080SystemPtr  sys8080,
+    I8080Addr_t     origin
+)
+{
+    if ( sys8080->options & kI8080SystemOptsDisasmToFile )
+        __I8080SystemRunWithDisasm(sys8080, origin);
+    else
+        __I8080SystemRun(sys8080, origin);
 }
 
 //
