@@ -25,22 +25,39 @@
 #define STATE_F         "[$%11$02hhX|%21$s]"
 #define STATE_SP        "(SP=$%17$04hX)"
 
-#define RESULT_B        " = $%5$02hhX"
-#define RESULT_C        " = $%6$02hhX"
-#define RESULT_D        " = $%7$02hhX"
-#define RESULT_E        " = $%8$02hhX"
-#define RESULT_H        " = $%9$02hhX"
-#define RESULT_L        " = $%10$02hhX"
-#define RESULT_F        " = " STATE_F
-#define RESULT_A        " = $%12$02hhX"
-#define RESULT_BC       " = $%13$04hX"
-#define RESULT_DE       " = $%14$04hX"
-#define RESULT_HL       " = $%15$04hX"
-#define RESULT_PSW      " = $%16$04hX"
-#define RESULT_SP       " = $%17$04hX"
-#define RESULT_PC       " = $%18$04hX"
-#define RESULT_INTE     " = $%19$02hhX"
-#define RESULT_IND_M    " = $%20$02hhX"
+#define VALUE_B         "$%5$02hhX"
+#define VALUE_C         "$%6$02hhX"
+#define VALUE_D         "$%7$02hhX"
+#define VALUE_E         "$%8$02hhX"
+#define VALUE_H         "$%9$02hhX"
+#define VALUE_L         "$%10$02hhX"
+#define VALUE_F         STATE_F
+#define VALUE_A         "$%12$02hhX"
+#define VALUE_BC        "$%13$04hX"
+#define VALUE_DE        "$%14$04hX"
+#define VALUE_HL        "$%15$04hX"
+#define VALUE_PSW       "$%16$04hX"
+#define VALUE_SP        "$%17$04hX"
+#define VALUE_PC        "$%18$04hX"
+#define VALUE_INTE      "$%19$02hhX"
+#define VALUE_IND_M     "$%20$02hhX"
+
+#define RESULT_B        " = " VALUE_B
+#define RESULT_C        " = " VALUE_C
+#define RESULT_D        " = " VALUE_D
+#define RESULT_E        " = " VALUE_E
+#define RESULT_H        " = " VALUE_H
+#define RESULT_L        " = " VALUE_L
+#define RESULT_F        " = " VALUE_F
+#define RESULT_A        " = " VALUE_A
+#define RESULT_BC       " = " VALUE_BC
+#define RESULT_DE       " = " VALUE_DE
+#define RESULT_HL       " = " VALUE_HL
+#define RESULT_PSW      " = " VALUE_PSW
+#define RESULT_SP       " = " VALUE_SP
+#define RESULT_PC       " = " VALUE_PC
+#define RESULT_INTE     " = " VALUE_INTE
+#define RESULT_IND_M    " = " VALUE_IND_M
 
 /*
  * All printf() disassembly calls will use a common argument list:
@@ -72,7 +89,7 @@
 const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "NOP\n",
     PREFIX_3BYTE "LXI B, " OPERAND_IMMED16 RESULT_BC "\n",
-    PREFIX_1BYTE "STAX B" RESULT_A "\n",
+    PREFIX_1BYTE "STAX B (" VALUE_BC ")" RESULT_A "\n",
     PREFIX_1BYTE "INX B" RESULT_BC "\n",
     PREFIX_1BYTE "INR B" RESULT_B "\n",
     PREFIX_1BYTE "DCR B" RESULT_B "\n",
@@ -80,7 +97,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "RLC" RESULT_A "\n",
     PREFIX_1BYTE "NOP\n",
     PREFIX_1BYTE "DAD B" RESULT_HL "\n",
-    PREFIX_1BYTE "LDAX B" RESULT_A "\n",
+    PREFIX_1BYTE "LDAX B (" VALUE_BC ")" RESULT_A "\n",
     PREFIX_1BYTE "DCX B" RESULT_BC "\n",
     PREFIX_1BYTE "INR C" RESULT_C "\n",
     PREFIX_1BYTE "DCR C" RESULT_C "\n",
@@ -88,7 +105,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "RRC" RESULT_A "\n",
     PREFIX_1BYTE "NOP\n",
     PREFIX_3BYTE "LXI D, " OPERAND_IMMED16 RESULT_DE "\n",
-    PREFIX_1BYTE "STAX D" RESULT_A "\n",
+    PREFIX_1BYTE "STAX D (" VALUE_DE ")" RESULT_A "\n",
     PREFIX_1BYTE "INX D" RESULT_DE "\n",
     PREFIX_1BYTE "INR D" RESULT_D "\n",
     PREFIX_1BYTE "DCR D" RESULT_D "\n",
@@ -96,7 +113,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "RAL" RESULT_A "\n",
     PREFIX_1BYTE "NOP\n",
     PREFIX_1BYTE "DAD D" RESULT_HL "\n",
-    PREFIX_1BYTE "LDAX D" RESULT_A "\n",
+    PREFIX_1BYTE "LDAX D (" VALUE_DE ")" RESULT_A "\n",
     PREFIX_1BYTE "DCX D" RESULT_DE "\n",
     PREFIX_1BYTE "INR E" RESULT_E "\n",
     PREFIX_1BYTE "DCR E" RESULT_E "\n",
@@ -122,9 +139,9 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_3BYTE "LXI SP, " OPERAND_IMMED16 RESULT_SP "\n",
     PREFIX_1BYTE "STA " OPERAND_ADDR RESULT_A "\n",
     PREFIX_1BYTE "INX SP" RESULT_SP "\n",
-    PREFIX_1BYTE "INR M ($%15$04hX)" RESULT_IND_M "\n",
-    PREFIX_1BYTE "DCR M ($%15$04hX)" RESULT_IND_M "\n",
-    PREFIX_1BYTE "MVI M ($%15$04hX), " OPERAND_IMMED8 RESULT_IND_M "\n",
+    PREFIX_1BYTE "INR M (" VALUE_HL ")" RESULT_IND_M "\n",
+    PREFIX_1BYTE "DCR M (" VALUE_HL ")" RESULT_IND_M "\n",
+    PREFIX_1BYTE "MVI M (" VALUE_HL "), " OPERAND_IMMED8 RESULT_IND_M "\n",
     PREFIX_1BYTE "STC" RESULT_F "\n",
     PREFIX_1BYTE "NOP\n",
     PREFIX_1BYTE "DAD SP" RESULT_HL "\n",
@@ -140,7 +157,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "MOV B, E" RESULT_B "\n",
     PREFIX_1BYTE "MOV B, H" RESULT_B "\n",
     PREFIX_1BYTE "MOV B, L" RESULT_B "\n",
-    PREFIX_1BYTE "MOV B, M ($%15$04hX)" RESULT_B "\n",
+    PREFIX_1BYTE "MOV B, M (" VALUE_HL ")" RESULT_B "\n",
     PREFIX_1BYTE "MOV B, A" RESULT_B "\n",
     PREFIX_1BYTE "MOV C, B" RESULT_C "\n",
     PREFIX_1BYTE "MOV C, C" RESULT_C "\n",
@@ -148,7 +165,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "MOV C, E" RESULT_C "\n",
     PREFIX_1BYTE "MOV C, H" RESULT_C "\n",
     PREFIX_1BYTE "MOV C, L" RESULT_C "\n",
-    PREFIX_1BYTE "MOV C, M ($%15$04hX)" RESULT_C "\n",
+    PREFIX_1BYTE "MOV C, M (" VALUE_HL ")" RESULT_C "\n",
     PREFIX_1BYTE "MOV C, A" RESULT_C "\n",
     PREFIX_1BYTE "MOV D, B" RESULT_D "\n",
     PREFIX_1BYTE "MOV D, C" RESULT_D "\n",
@@ -156,7 +173,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "MOV D, E" RESULT_D "\n",
     PREFIX_1BYTE "MOV D, H" RESULT_D "\n",
     PREFIX_1BYTE "MOV D, L" RESULT_D "\n",
-    PREFIX_1BYTE "MOV D, M ($%15$04hX)" RESULT_D "\n",
+    PREFIX_1BYTE "MOV D, M (" VALUE_HL ")" RESULT_D "\n",
     PREFIX_1BYTE "MOV D, A" RESULT_D "\n",
     PREFIX_1BYTE "MOV E, B" RESULT_E "\n",
     PREFIX_1BYTE "MOV E, C" RESULT_E "\n",
@@ -164,7 +181,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "MOV E, E" RESULT_E "\n",
     PREFIX_1BYTE "MOV E, H" RESULT_E "\n",
     PREFIX_1BYTE "MOV E, L" RESULT_E "\n",
-    PREFIX_1BYTE "MOV E, M ($%15$04hX)" RESULT_E "\n",
+    PREFIX_1BYTE "MOV E, M (" VALUE_HL ")" RESULT_E "\n",
     PREFIX_1BYTE "MOV E, A" RESULT_E "\n",
     PREFIX_1BYTE "MOV H, B" RESULT_H "\n",
     PREFIX_1BYTE "MOV H, C" RESULT_H "\n",
@@ -172,7 +189,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "MOV H, E" RESULT_H "\n",
     PREFIX_1BYTE "MOV H, H" RESULT_H "\n",
     PREFIX_1BYTE "MOV H, L" RESULT_H "\n",
-    PREFIX_1BYTE "MOV H, M ($%15$04hX)" RESULT_H "\n",
+    PREFIX_1BYTE "MOV H, M (" VALUE_HL ")" RESULT_H "\n",
     PREFIX_1BYTE "MOV H, A" RESULT_H "\n",
     PREFIX_1BYTE "MOV L, B" RESULT_L "\n",
     PREFIX_1BYTE "MOV L, C" RESULT_L "\n",
@@ -180,23 +197,23 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "MOV L, E" RESULT_L "\n",
     PREFIX_1BYTE "MOV L, H" RESULT_L "\n",
     PREFIX_1BYTE "MOV L, L" RESULT_L "\n",
-    PREFIX_1BYTE "MOV L, M ($%15$04hX)" RESULT_L "\n",
+    PREFIX_1BYTE "MOV L, M (" VALUE_HL ")" RESULT_L "\n",
     PREFIX_1BYTE "MOV L, A" RESULT_L "\n",
-    PREFIX_1BYTE "MOV M ($%15$04hX), B" RESULT_IND_M "\n",
-    PREFIX_1BYTE "MOV M ($%15$04hX), C" RESULT_IND_M "\n",
-    PREFIX_1BYTE "MOV M ($%15$04hX), D" RESULT_IND_M "\n",
-    PREFIX_1BYTE "MOV M ($%15$04hX), E" RESULT_IND_M "\n",
-    PREFIX_1BYTE "MOV M ($%15$04hX), H" RESULT_IND_M "\n",
-    PREFIX_1BYTE "MOV M ($%15$04hX), L" RESULT_IND_M "\n",
+    PREFIX_1BYTE "MOV M (" VALUE_HL "), B" RESULT_IND_M "\n",
+    PREFIX_1BYTE "MOV M (" VALUE_HL "), C" RESULT_IND_M "\n",
+    PREFIX_1BYTE "MOV M (" VALUE_HL "), D" RESULT_IND_M "\n",
+    PREFIX_1BYTE "MOV M (" VALUE_HL "), E" RESULT_IND_M "\n",
+    PREFIX_1BYTE "MOV M (" VALUE_HL "), H" RESULT_IND_M "\n",
+    PREFIX_1BYTE "MOV M (" VALUE_HL "), L" RESULT_IND_M "\n",
     PREFIX_1BYTE "HLT\n",
-    PREFIX_1BYTE "MOV M ($%15$04hX), A" RESULT_IND_M "\n",
+    PREFIX_1BYTE "MOV M (" VALUE_HL "), A" RESULT_IND_M "\n",
     PREFIX_1BYTE "MOV A, B" RESULT_A "\n",
     PREFIX_1BYTE "MOV A, C" RESULT_A "\n",
     PREFIX_1BYTE "MOV A, D" RESULT_A "\n",
     PREFIX_1BYTE "MOV A, E" RESULT_A "\n",
     PREFIX_1BYTE "MOV A, H" RESULT_A "\n",
     PREFIX_1BYTE "MOV A, L" RESULT_A "\n",
-    PREFIX_1BYTE "MOV A, M ($%15$04hX)" RESULT_A "\n",
+    PREFIX_1BYTE "MOV A, M (" VALUE_HL ")" RESULT_A "\n",
     PREFIX_1BYTE "MOV A, A" RESULT_A "\n",
     PREFIX_1BYTE "ADD B" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ADD C" RESULT_A " " STATE_F "\n",
@@ -204,7 +221,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "ADD E" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ADD H" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ADD L" RESULT_A " " STATE_F "\n",
-    PREFIX_1BYTE "ADD M ($%15$04hX)" RESULT_A " " STATE_F "\n",
+    PREFIX_1BYTE "ADD M (" VALUE_HL ")" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ADD A" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ADC B" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ADC C" RESULT_A " " STATE_F "\n",
@@ -212,7 +229,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "ADC E" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ADC H" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ADC L" RESULT_A " " STATE_F "\n",
-    PREFIX_1BYTE "ADC M ($%15$04hX)" RESULT_A " " STATE_F "\n",
+    PREFIX_1BYTE "ADC M (" VALUE_HL ")" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ADC A" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "SUB B" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "SUB C" RESULT_A " " STATE_F "\n",
@@ -220,7 +237,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "SUB E" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "SUB H" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "SUB L" RESULT_A " " STATE_F "\n",
-    PREFIX_1BYTE "SUB M ($%15$04hX)" RESULT_A " " STATE_F "\n",
+    PREFIX_1BYTE "SUB M (" VALUE_HL ")" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "SUB A" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "SBB B" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "SBB C" RESULT_A " " STATE_F "\n",
@@ -228,7 +245,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "SBB E" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "SBB H" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "SBB L" RESULT_A " " STATE_F "\n",
-    PREFIX_1BYTE "SBB M ($%15$04hX)" RESULT_A " " STATE_F "\n",
+    PREFIX_1BYTE "SBB M (" VALUE_HL ")" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "SBB A" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ANA B" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ANA C" RESULT_A " " STATE_F "\n",
@@ -236,7 +253,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "ANA E" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ANA H" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ANA L" RESULT_A " " STATE_F "\n",
-    PREFIX_1BYTE "ANA M ($%15$04hX)" RESULT_A " " STATE_F "\n",
+    PREFIX_1BYTE "ANA M (" VALUE_HL ")" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ANA A" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "XRA B" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "XRA C" RESULT_A " " STATE_F "\n",
@@ -244,7 +261,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "XRA E" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "XRA H" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "XRA L" RESULT_A " " STATE_F "\n",
-    PREFIX_1BYTE "XRA M ($%15$04hX)" RESULT_A " " STATE_F "\n",
+    PREFIX_1BYTE "XRA M (" VALUE_HL ")" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "XRA A" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ORA B" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ORA C" RESULT_A " " STATE_F "\n",
@@ -252,7 +269,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "ORA E" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ORA H" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ORA L" RESULT_A " " STATE_F "\n",
-    PREFIX_1BYTE "ORA M ($%15$04hX)" RESULT_A " " STATE_F "\n",
+    PREFIX_1BYTE "ORA M (" VALUE_HL ")" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "ORA A" RESULT_A " " STATE_F "\n",
     PREFIX_1BYTE "CMP B" RESULT_F "\n",
     PREFIX_1BYTE "CMP C" RESULT_F "\n",
@@ -260,7 +277,7 @@ const char* const I8080InstrDisassemblyFormat[256] = {
     PREFIX_1BYTE "CMP E" RESULT_F "\n",
     PREFIX_1BYTE "CMP H" RESULT_F "\n",
     PREFIX_1BYTE "CMP L" RESULT_F "\n",
-    PREFIX_1BYTE "CMP M ($%15$04hX)" RESULT_F "\n",
+    PREFIX_1BYTE "CMP M (" VALUE_HL ")" RESULT_F "\n",
     PREFIX_1BYTE "CMP A" RESULT_F "\n",
     PREFIX_1BYTE "RNZ\n",
     PREFIX_1BYTE "POP B" RESULT_BC STATE_SP "\n",
