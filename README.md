@@ -2,7 +2,7 @@
 
 One night while browsing the Internet regarding assembly language a page was among the search results that cited the Intel 8080 processor, from circa 1976.  It was a programmer's guide of the day — a paper manual that had clearly been scanned into a PDF.
 
-Compared to the ARM64 ISA I was learning at the time, the 8080 was so simple, yet slightly more sophisticated than the 6502.  It had six general purpose registers that could be accessed separately or in 16-bit pairs.  The stack could be located anywhere in memory and was not limited to a single 256-byte page.  All branching instructions (jump, call, return) were conditional, taken only if the referenced status flag was set.
+Compared to the ARM64 ISA I was learning at the time, the 8080 was so simple — with some advantages over the 6502 but some clear disadvantages.  (I never properly-appreciated indirect and indexed addressing modes before I learned about the 8080!)  It had six general purpose registers that could be accessed separately or in 16-bit pairs.  The stack could be located anywhere in memory and was not limited to a single 256-byte page.  All branching instructions (jump, call, return) were conditional, taken only if the referenced status flag was set.
 
 Another interesting aspect was the integration of device i/o into the ISA.  The `IN #` and `OUT #` instructions wrote the accumulator to or read the accumulator from an indexed device, respectively.  There could be up to 256 input and 256 output devices present on a system.
 
