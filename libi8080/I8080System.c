@@ -27,7 +27,7 @@ static I8080CycleCount I8080CycleCountByOpcode[256] = {
              7,    /* MVI B, d8 */
              4,    /* RLC */
              4,    /* *NOP* */
-            11,    /* DAD B */
+            10,    /* DAD B */
              7,    /* LDAX B */
              5,    /* DCX B */
              5,    /* INR C */
@@ -43,7 +43,7 @@ static I8080CycleCount I8080CycleCountByOpcode[256] = {
              7,    /* MVI D, d8 */
              4,    /* RAL */
              4,    /* *NOP* */
-            11,    /* DAD D */
+            10,    /* DAD D */
              7,    /* LDAX D */
              5,    /* DCX D */
              5,    /* INR E */
@@ -59,7 +59,7 @@ static I8080CycleCount I8080CycleCountByOpcode[256] = {
              7,    /* MVI H, d8 */
              4,    /* DAA */
              4,    /* *NOP* */
-            11,    /* DAD H */
+            10,    /* DAD H */
             16,    /* LHLD adr */
              5,    /* DCX H */
              5,    /* INR L */
@@ -75,7 +75,7 @@ static I8080CycleCount I8080CycleCountByOpcode[256] = {
             10,    /* MVI M, d8 */
              4,    /* STC */
              4,    /* *NOP* */
-            11,    /* DAD SP */
+            10,    /* DAD SP */
             13,    /* LDA adr */
              5,    /* DCX SP */
              5,    /* INR A */
@@ -433,42 +433,42 @@ I8080InstrHandlerMonolithic(
 
 #pragma mark - Accumulator, immediate
         case 0xC6:  /* ADI D8 */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)O8();
+            sys8080->rgstrs.A = (o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)O8()) & 0xFF;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
             sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xCE:  /* ACI D8 */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)O8() + sys8080->rgstrs.CY;
+            sys8080->rgstrs.A = (o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)O8() + sys8080->rgstrs.CY) & 0xFF;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
             sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xD6:  /* SUI D8 */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~O8() + 1);
+            sys8080->rgstrs.A = (o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)(O8())) + 1) & 0xFF;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xDE:  /* SBI D8 */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~(O8() + sys8080->rgstrs.CY) + 1);
+            sys8080->rgstrs.A = (o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)(O8() + sys8080->rgstrs.CY)) + 1) & 0xFF;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xE6:  /* ANI D8 */
             sys8080->rgstrs.A = o8 = sys8080->rgstrs.A & O8();
             sys8080->rgstrs.Z = o8 ? 0 : 1, sys8080->rgstrs.S = (o8 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o8 & 0b100000000) ? 1 : 0;
+            sys8080->rgstrs.CY = 0;
             break;
         case 0xEE:  /* XRI D8 */
             sys8080->rgstrs.A = o8 = sys8080->rgstrs.A ^ O8();
             sys8080->rgstrs.Z = o8 ? 0 : 1, sys8080->rgstrs.S = (o8 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o8 & 0b100000000) ? 1 : 0;
+            sys8080->rgstrs.CY = 0;
             break;
         case 0xF6:  /* ORI D8 */
             sys8080->rgstrs.A = o8 = sys8080->rgstrs.A | O8();
             sys8080->rgstrs.Z = o8 ? 0 : 1, sys8080->rgstrs.S = (o8 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o8 & 0b100000000) ? 1 : 0;
+            sys8080->rgstrs.CY = 0;
             break;
         case 0xFE:  /* CPI D8 */
-            o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~O8() + 1);
+            o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)O8()) + 1;
             sys8080->rgstrs.Z = o16 ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
             sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
@@ -1021,39 +1021,39 @@ I8080InstrHandlerMonolithic(
             break;
             
         case 0x90:  /* SUB B */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.B + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.B) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x91:  /* SUB C */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.C + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.C) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x92:  /* SUB D */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.D + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.D) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x93:  /* SUB E */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.E + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.E) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x94:  /* SUB H */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.H + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.H) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x95:  /* SUB L */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.L + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.L) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x96:  /* SUB M */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~RM() + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)RM()) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x97:  /* SUB A */
             sys8080->rgstrs.A = 0;
@@ -1062,39 +1062,39 @@ I8080InstrHandlerMonolithic(
             break;
 
         case 0x98:  /* SBB B */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~(sys8080->rgstrs.B + sys8080->rgstrs.CY) + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.B + sys8080->rgstrs.CY) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x99:  /* SBB C */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~(sys8080->rgstrs.C + sys8080->rgstrs.CY) + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.C + sys8080->rgstrs.CY) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x9A:  /* SBB D */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~(sys8080->rgstrs.D + sys8080->rgstrs.CY) + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.D + sys8080->rgstrs.CY) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x9B:  /* SBB E */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~(sys8080->rgstrs.E + sys8080->rgstrs.CY) + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.E + sys8080->rgstrs.CY) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x9C:  /* SBB H */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~(sys8080->rgstrs.H + sys8080->rgstrs.CY) + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.H + sys8080->rgstrs.CY) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x9D:  /* SBB L */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~(sys8080->rgstrs.L + sys8080->rgstrs.CY) + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.L + sys8080->rgstrs.CY) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x9E:  /* SBB M */
-            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~(RM() + sys8080->rgstrs.CY) + 1);
+            sys8080->rgstrs.A = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)RM() + sys8080->rgstrs.CY) + 1;
             sys8080->rgstrs.Z = sys8080->rgstrs.A ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0x9F:  /* SBB A */
             /*
@@ -1247,39 +1247,39 @@ I8080InstrHandlerMonolithic(
             break;
             
         case 0xB8:  /* CMP B */
-            o8 = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.B + 1);
+            o8 = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.B) + 1;
             sys8080->rgstrs.Z = o8 ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xB9:  /* CMP C */
-            o8 = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.C + 1);
+            o8 = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.C) + 1;
             sys8080->rgstrs.Z = o8 ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xBA:  /* CMP D */
-            o8 = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.D + 1);
+            o8 = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.D) + 1;
             sys8080->rgstrs.Z = o8 ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xBB:  /* CMP E */
-            o8 = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.E + 1);
+            o8 = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.E) + 1;
             sys8080->rgstrs.Z = o8 ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xBC:  /* CMP H */
-            o8 = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.H + 1);
+            o8 = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.H) + 1;
             sys8080->rgstrs.Z = o8 ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xBD:  /* CMP L */
-            o8 = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~sys8080->rgstrs.L + 1);
+            o8 = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)sys8080->rgstrs.L) + 1;
             sys8080->rgstrs.Z = o8 ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xBE:  /* CMP M */
-            o8 = o16 = (uint16_t)sys8080->rgstrs.A + (uint16_t)(~RM() + 1);
+            o8 = o16 = (uint16_t)sys8080->rgstrs.A + ~((uint16_t)RM()) + 1;
             sys8080->rgstrs.Z = o8 ? 0 : 1, sys8080->rgstrs.S = (o16 & 0b10000000) ? 1 : 0,
-            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 0 : 1;
+            sys8080->rgstrs.CY = (o16 & 0b100000000) ? 1 : 0;
             break;
         case 0xBF:  /* CMP A */
             sys8080->rgstrs.Z = 1, sys8080->rgstrs.S = 0,
@@ -1566,8 +1566,93 @@ I8080SystemSetPC(
 
 //
 
+static
 bool
-I8080SystemStep(
+__I8080SystemStepWithDisasm(
+    I8080SystemPtr  sys8080,
+    I8080CycleCount *cycles
+)
+{
+    bool            ok = false;
+    
+    if ( I8080SystemIsReady(sys8080->state) ) {
+        I8080FullInstrContext_t     instr;
+        I8080CycleCount             elapsed = 1;
+        
+        if ( ! I8080SystemIsRunning(sys8080->state) ) {
+            sys8080->state |= kI8080SystemStateRunning;
+            sys8080->last_cycle = I8080MicrosecondsMakeNow();
+            INFO("System transitioned to running state");
+        }
+        if ( (sys8080->state & kI8080SystemStateStall) == 0 ) {
+#ifdef I8080_SYSTEM_ENABLE_INTERRUPT_API
+            pthread_mutex_lock(&sys8080->interrupt.lock);
+            
+            if ( sys8080->interrupt.is_raised ) {
+                instr.opcode = sys8080->interrupt.opcode;
+                instr.is_inte = true;
+                DEBUG("Interrupt instruction: 0x%02hhX", instr.opcode);
+                sys8080->interrupt.is_raised = false;
+            } else {
+                I8080FullInstrContextFetch(&instr, sys8080->sysmem, &sys8080->rgstrs);
+                DEBUG("Fetched instruction: 0x%02hhX", instr.opcode);
+            }
+            
+            pthread_mutex_unlock(&sys8080->interrupt.lock);
+#else
+            I8080FullInstrContextFetch(&instr, sys8080->sysmem, &sys8080->rgstrs);
+            DEBUG("Fetched instruction: 0x%02hhX", instr.opcode);
+#endif
+
+            if ( sys8080->itbl.dispatchers[instr.opcode] ) {
+                instr.cycles = elapsed = sys8080->itbl.dispatchers[instr.opcode](sys8080, instr.opcode);
+                sys8080->rgstrs.CYCLS += elapsed;
+                            
+                I8080FullInstrContextDisassembleToFile(
+                        sys8080->disasm_fptr ? sys8080->disasm_fptr : stderr,
+                        &instr, sys8080->sysmem, &sys8080->rgstrs);
+                
+                if ( sys8080->options & kI8080SystemOpts2MHzClock ) {
+                    I8080Microseconds   now = I8080MicrosecondsMakeNow(),
+                                        dt = (sys8080->last_cycle + (double)elapsed * 0.5) - now;
+                    
+                    if ( dt > 0.0 ) {
+                        DEBUG("Sleeping for %.3f µs to fix clockspeed", dt);
+                        I8080TimingSleep(dt);
+                        now += dt;
+                    }
+                    sys8080->last_cycle = now;
+                }
+                ok = true;
+            } else {
+                // Stop running the program and indicate an invalid opcode was encountered:
+                sys8080->state = kI8080SystemStateOn | kI8080SystemStateBadInstr;
+                ERROR("An illegal instruction (0x%02hhX) was encountered", instr);
+            }
+        } else {
+            if ( sys8080->options & kI8080SystemOpts2MHzClock ) {
+                I8080Microseconds   now = I8080MicrosecondsMakeNow(),
+                                    dt = (sys8080->last_cycle + (double)elapsed * 0.5) - now;
+                
+                if ( dt > 0.0 ) {
+                    DEBUG("Sleeping for %.3f µs to fix clockspeed", dt);
+                    I8080TimingSleep(dt);
+                    now += dt;
+                }
+                sys8080->last_cycle = now;
+            }
+            ok = true;
+        }
+        if ( cycles ) *cycles = elapsed;
+    }
+    return ok;
+}
+
+//
+
+static
+bool
+__I8080SystemStep(
     I8080SystemPtr  sys8080,
     I8080CycleCount *cycles
 )
@@ -1640,6 +1725,20 @@ I8080SystemStep(
         if ( cycles ) *cycles = elapsed;
     }
     return ok;
+}
+
+//
+
+bool
+I8080SystemStep(
+    I8080SystemPtr  sys8080,
+    I8080CycleCount *cycles
+)
+{
+    if ( sys8080->options & kI8080SystemOptsDisasmToFile )
+        return __I8080SystemStepWithDisasm(sys8080, cycles);
+    else
+        return __I8080SystemStep(sys8080, cycles);
 }
 
 //

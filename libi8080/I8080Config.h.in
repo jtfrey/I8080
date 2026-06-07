@@ -60,7 +60,7 @@ extern const unsigned I8080VersionPatch;
  */
 #cmakedefine HAS_BUILTIN_PARITY
 #ifdef HAS_BUILTIN_PARITY
-#   define I8080Parity(X) __builtin_parity(X)
+#   define I8080Parity(X) (! __builtin_parity(X))
 #else
     /* Kernighan's bit counter */
     static inline
@@ -71,7 +71,7 @@ extern const unsigned I8080VersionPatch;
     {
         int     n_bits = 0;
         while (X) X &= (X - 1), n_bits++;
-        return (n_bits & 0b1);
+        return (n_bits & 0b1) == 0;
     }
 #endif
 

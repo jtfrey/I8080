@@ -65,20 +65,22 @@ I8080InstrDispatchAccum(
             A_lo += OP2_lo + sys8080->rgstrs.CY;
             SET_OPSTR('+');
             SET_DEBUG_FMT(cy_debug_fmt);
+            sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
             break;
         case kI8080InstrALUOpAdd:
             OP2_lo = OP2 & 0xF;
             A += OP2;
             A_lo += OP2_lo;
             SET_OPSTR('+');
+            sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
             break;
         
         case kI8080InstrALUOpSubC: {
 #ifndef I8080_STRIP_DEBUGGING
             uint16_t OP2_copy = OP2;
 #endif
+            OP2_lo = ~(OP2 + sys8080->rgstrs.CY) & 0xF + 1;
             OP2 = ~(OP2 + sys8080->rgstrs.CY) + 1;
-            OP2_lo = OP2 & 0xF;
             A += OP2;
             A_lo += OP2_lo;
 #ifndef I8080_STRIP_DEBUGGING
@@ -86,6 +88,7 @@ I8080InstrDispatchAccum(
 #endif
             SET_OPSTR('-');
             SET_DEBUG_FMT(cy_debug_fmt);
+            sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
             break;
         }
         case kI8080InstrALUOpCmp:
@@ -94,14 +97,15 @@ I8080InstrDispatchAccum(
 #ifndef I8080_STRIP_DEBUGGING
             uint16_t OP2_copy = OP2;
 #endif
+            OP2_lo = ~OP2 & 0xF + 1;
             OP2 = ~OP2 + 1;
-            OP2_lo = OP2 & 0xF;
             A += OP2;
             A_lo += OP2_lo;
 #ifndef I8080_STRIP_DEBUGGING
             OP2 = OP2_copy;
 #endif
             SET_OPSTR('-');
+            sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
             break;
         }
             
@@ -130,7 +134,6 @@ I8080InstrDispatchAccum(
     }
     sys8080->rgstrs.Z = (A == 0) ? 0b1 : 0b0;
     sys8080->rgstrs.S = (A & 0b10000000) ? 0b1 : 0b0;
-    sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
     sys8080->rgstrs.P = I8080Parity(A & 0xFF);
     sys8080->rgstrs.CY = (A & 0b100000000) ? 0b1 : 0b0;
     DEBUG(debug_fmt,
@@ -248,17 +251,20 @@ I8080InstrDispatchAccumImmed(
             A_lo += OP2_lo + sys8080->rgstrs.CY;
             SET_OPSTR('+');
             SET_DEBUG_FMT(cy_debug_fmt);
+            sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
             break;
         case kI8080InstrALUOpAdd:
             A += OP2;
             A_lo += OP2_lo;
             SET_OPSTR('+');
+            sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
             break;
         
         case kI8080InstrALUOpSubC: {
 #ifndef I8080_STRIP_DEBUGGING
             uint16_t OP2_copy = OP2;
 #endif
+            OP2_lo = ~(OP2 + sys8080->rgstrs.CY) & 0xF + 1;
             OP2 = ~(OP2 + sys8080->rgstrs.CY) + 1;
             A += OP2;
             A_lo += OP2_lo;
@@ -267,6 +273,7 @@ I8080InstrDispatchAccumImmed(
 #endif
             SET_OPSTR('-');
             SET_DEBUG_FMT(cy_debug_fmt);
+            sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
             break;
         }
         case kI8080InstrALUOpCmp:
@@ -275,6 +282,7 @@ I8080InstrDispatchAccumImmed(
 #ifndef I8080_STRIP_DEBUGGING
             uint16_t OP2_copy = OP2;
 #endif
+            OP2_lo = ~OP2 & 0xF + 1;
             OP2 = ~OP2 + 1;
             A += OP2;
             A_lo += OP2_lo;
@@ -282,6 +290,7 @@ I8080InstrDispatchAccumImmed(
             OP2 = OP2_copy;
 #endif
             SET_OPSTR('-');
+            sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
             break;
         }
             
@@ -310,7 +319,6 @@ I8080InstrDispatchAccumImmed(
     }
     sys8080->rgstrs.Z = (A == 0) ? 0b1 : 0b0;
     sys8080->rgstrs.S = (A & 0b10000000) ? 0b1 : 0b0;
-    sys8080->rgstrs.AC = (A_lo & 0b00010000) ? 0b1 : 0b0;
     sys8080->rgstrs.P = I8080Parity(A & 0xFF);
     sys8080->rgstrs.CY = (A & 0b100000000) ? 0b1 : 0b0;
     DEBUG(debug_fmt,

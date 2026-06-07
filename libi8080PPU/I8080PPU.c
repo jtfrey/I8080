@@ -13,6 +13,11 @@
 #include "I8080Timing.h"
 #include <stddef.h>
 #include <pthread.h>
+#include <locale.h>
+
+#define I8080_PPU_RENDER_DURATION       13333.33
+#define I8080_PPU_VBLANK_DURATION        3333.34
+#define I8080_PPU_FULL_DURATION         I8080_PPU_RENDER_DURATION + I8080_PPU_VBLANK_DURATION
 
 #define I8080_PPU_MAXCOLOR      64
 
@@ -61,6 +66,7 @@ typedef struct {
     pthread_cond_t              render_cond;
     pthread_mutex_t             render_lock;
     short                       saved_colors[4 * I8080_PPU_MAXCOLOR];
+    chtype                      *pixel_defs;
     WINDOW                      *wndw;
     int                         w, h;
     int                         x, y;
@@ -244,7 +250,13 @@ I8080PPURenderThread(
     uint64_t                        frame_count = 0;
     bool                            was_rendering;
     bool                            has_background = false;
-    
+
+#if 0
+    FILE                            *fptr = fopen("render.log", "w");
+    char                            out_buffer[8192];
+    setvbuf(fptr, out_buffer, _IOFBF, sizeof(out_buffer));
+#endif
+
     // Grab the lock:
     pthread_mutex_lock(&ppu->render_lock);
     ppu->t_last_frame = 0;
@@ -255,165 +267,54 @@ I8080PPURenderThread(
     }
     
     while ( (ppu->cntrl & kI8080PPUControlIsInShutdown) == 0 ) {
-        I8080Microseconds   now = I8080MicrosecondsMakeNow();
-        struct timespec     ts;
+        I8080Microseconds       now;
+        struct timespec         ts;
+        int                     rc;
+        chtype                  blank = ppu->pixel_defs[ppu->mapped.ptbl[0].cidx[0]];
+        chtype                  row[ppu->w];
+        int                     x, y;
+        int                     i, j, k;
         
-        if ( now > ppu->t_last_frame ) {
-            chtype                  blank = ' ' | COLOR_PAIR(1 + ppu->mapped.ptbl[0].cidx[0]);
-            chtype                  row[ppu->w];
-            int                     x, y;
-            int                     i, j, k;
-            
-            ppu->mapped.rgstrs.is_rendering = 0xFF;
-            pthread_mutex_unlock(&ppu->render_lock);
-            
-            // Interrupt?
-            if ( ppu->sys8080 && ppu->mapped.rgstrs.inte_opcode ) I8080SystemRaiseInterrupt(ppu->sys8080, ppu->mapped.rgstrs.inte_opcode);
-            
-            // Set background color and prepare for refresh:
-            //redrawwin(ppu->wndw);
-            
-            // Initialize the status register:
-            ppu->mapped.rgstrs.ppu_status = ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeMapSelect;
-            
-            if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderEnable ) {
-                if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderBackground ) {
-                    I8080PPUTileRef_t       *tilemap;
-                    //
-                    // We will need the tile map regardless of whether or not
-                    // sprites are enabled:
-                    //
-                    if ( ! was_rendering ) {
-                        was_rendering = true;
-                    }
-                    if ( ! has_background ) {
-                        wbkgd(ppu->wndw, ' '|COLOR_PAIR(1 + ppu->mapped.ptbl[0].cidx[0]));
-                        has_background = true;
-                    }
-                    tilemap = &ppu->mapped.map[(ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeMapSelect)][0];
-                    if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderSprites ) {
-                        I8080PPUSpriteSlot_t    spriteslots[I8080_PPU_MAXSPRTLN];
-                        
-                        for ( j = 0, y = 0; j < I8080_PPU_TMAPHEIGHT; j++ ) {
-                            uint8_t             *tiles[I8080_PPU_TMAPWIDTH];
-                            I8080PPUPalette_t   *palettes[I8080_PPU_TMAPWIDTH];
-                            
-                            for ( i = 0; i < I8080_PPU_TMAPWIDTH; i++, tilemap++ ) {
-                                tiles[i] = &ppu->mapped.ttbl[tilemap->tile_idx].pixels[0];
-                                palettes[i] = &ppu->mapped.ptbl[tilemap->plte_idx];
-                            }
-                            for ( i = 0; i < I8080_PPU_TILEHEIGHT; i++, y++ ) {
-                                chtype      *rp = row;
-                                bool        sprite_overflow;
-                                int         nsprites;
-                                
-                                // Load sprites:
-                                nsprites = I8080PPUFillSpriteSlots(
-                                                spriteslots,
-                                                ppu->mapped.sprites,
-                                                ppu->mapped.rgstrs.sprite_offset,
-                                                ppu->mapped.ttbl,
-                                                y,
-                                                &sprite_overflow);
-                                if ( sprite_overflow ) ppu->mapped.rgstrs.ppu_status |= kI8080PPUStatusSpriteOverflow;
-                                for ( x = 0, k = 0; x < ppu->w; k++ ) {
-                                    int         bpt = I8080_PPU_TILEROWBYTES;
-                                    
-                                    while ( bpt-- ) {
-                                        int         ppb = I8080_PPU_PPB;
-                                        uint8_t     pixels = *tiles[k]++;
-                                        
-                                        while ( ppb-- ) {
-                                            int     background_cidx = pixels & ((1 << I8080_PPU_BPP) - 1);
-                                            int     sprite_bg_cidx = 0, sprite_bg_plte,
-                                                    sprite_fg_cidx = 0, sprite_fg_plte,
-                                                    sprite_idx = -1;
-                                            chtype  pixel;
-                                            
-                                            // Sprite check:
-                                            I8080PPUSpritePixel(spriteslots, nsprites, x,
-                                                                &sprite_bg_cidx, &sprite_bg_plte,
-                                                                &sprite_fg_cidx, &sprite_fg_plte,
-                                                                &sprite_idx);
-                                            
-                                            if ( sprite_fg_cidx ) {
-                                                pixel = ' ' | COLOR_PAIR(1 + ppu->mapped.ptbl[sprite_fg_plte].cidx[sprite_fg_cidx]);
-                                                if ( sprite_idx == 0 && background_cidx ) {
-                                                    ppu->mapped.rgstrs.ppu_status |= kI8080PPUStatusSprite0Hit;
-                                                }
-                                            } else {
-                                                
-                                                if ( ! background_cidx && sprite_bg_cidx ) {
-                                                    pixel = ' ' | COLOR_PAIR(1 + ppu->mapped.ptbl[sprite_bg_plte].cidx[sprite_bg_cidx]);
-                                                } else {
-                                                    pixel = background_cidx ? (' ' | COLOR_PAIR(1 + palettes[k]->cidx[background_cidx])) : blank;
-                                                }
-                                            }
-                                            *rp++ = pixel;
-                                            
-                                            // Shift next background pixel into place:
-                                            pixels >>= I8080_PPU_BPP;
-                                            x++;
-                                        }
-                                    }
-                                }
-                                mvwaddchnstr(ppu->wndw, y, 0, row, ppu->w);
-                            }
-                        }
-                    } else {
-                        //
-                        // Only rendering the background layer
-                        //
-                        for ( j = 0, y = 0; j < I8080_PPU_TMAPHEIGHT; j++ ) {
-                            uint8_t             *tiles[I8080_PPU_TMAPWIDTH];
-                            I8080PPUPalette_t   *palettes[I8080_PPU_TMAPWIDTH];
-                            
-                            for ( i = 0; i < I8080_PPU_TMAPWIDTH; i++, tilemap++ ) {
-                                tiles[i] = &ppu->mapped.ttbl[tilemap->tile_idx].pixels[0];
-                                palettes[i] = &ppu->mapped.ptbl[tilemap->plte_idx];
-                            }
-                            for ( i = 0; i < I8080_PPU_TILEHEIGHT; i++, y++ ) {
-                                chtype      *rp = row;
-                                
-                                for ( x = 0, k = 0; x < ppu->w; x += I8080_PPU_TILEWIDTH, k++ ) {
-                                    uint8_t     pixels = *tiles[k]++;
-                                    int         cidx;
-                                    
-                                    cidx = pixels & 0x3; pixels >>= 2;
-                                    *rp++ = cidx ? (' ' | COLOR_PAIR(1 + palettes[k]->cidx[cidx])) : blank;
-                                    cidx = pixels & 0x3; pixels >>= 2;
-                                    *rp++ = cidx ? (' ' | COLOR_PAIR(1 + palettes[k]->cidx[cidx])) : blank;
-                                    cidx = pixels & 0x3; pixels >>= 2;
-                                    *rp++ = cidx ? (' ' | COLOR_PAIR(1 + palettes[k]->cidx[cidx])) : blank;
-                                    cidx = pixels & 0x3;
-                                    *rp++ = cidx ? (' ' | COLOR_PAIR(1 + palettes[k]->cidx[cidx])) : blank;
-                                    
-                                    pixels = *tiles[k]++;
-                                    cidx = pixels & 0x3; pixels >>= 2;
-                                    *rp++ = cidx ? (' ' | COLOR_PAIR(1 + palettes[k]->cidx[cidx])) : blank;
-                                    cidx = pixels & 0x3; pixels >>= 2;
-                                    *rp++ = cidx ? (' ' | COLOR_PAIR(1 + palettes[k]->cidx[cidx])) : blank;
-                                    cidx = pixels & 0x3; pixels >>= 2;
-                                    *rp++ = cidx ? (' ' | COLOR_PAIR(1 + palettes[k]->cidx[cidx])) : blank;
-                                    cidx = pixels & 0x3;
-                                    *rp++ = cidx ? (' ' | COLOR_PAIR(1 + palettes[k]->cidx[cidx])) : blank;
-                                }
-                                mvwaddchnstr(ppu->wndw, y, 0, row, ppu->w);
-                            }
-                        }
-                    }
-                } else if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderSprites ) {
+        now = I8080MicrosecondsMakeNow();
+#if 0
+        fprintf(fptr, "%f\n", now);
+#endif
+        
+        ppu->mapped.rgstrs.is_rendering = 0xFF;
+        pthread_mutex_unlock(&ppu->render_lock);
+        
+        // Interrupt?
+        if ( ppu->sys8080 && ppu->mapped.rgstrs.inte_opcode ) I8080SystemRaiseInterrupt(ppu->sys8080, ppu->mapped.rgstrs.inte_opcode);
+        
+        // Initialize the status register:
+        ppu->mapped.rgstrs.ppu_status = ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeMapSelect;
+        
+        if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderEnable ) {
+            if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderBackground ) {
+                I8080PPUTileRef_t       *tilemap;
+                //
+                // We will need the tile map regardless of whether or not
+                // sprites are enabled:
+                //
+                if ( ! was_rendering ) {
+                    was_rendering = true;
+                }
+                if ( ! has_background ) {
+                    wbkgd(ppu->wndw, ppu->pixel_defs[ppu->mapped.ptbl[0].cidx[0]]);
+                    has_background = true;
+                }
+                tilemap = &ppu->mapped.map[(ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeMapSelect)][0];
+                if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderSprites ) {
                     I8080PPUSpriteSlot_t    spriteslots[I8080_PPU_MAXSPRTLN];
                     
-                    if ( ! was_rendering ) {
-                        was_rendering = true;
-                    }
-                    if ( has_background ) {
-                        wbkgd(ppu->wndw, ' '|COLOR_PAIR(0));
-                        has_background = false;
-                    }
-                    
                     for ( j = 0, y = 0; j < I8080_PPU_TMAPHEIGHT; j++ ) {
+                        uint8_t             *tiles[I8080_PPU_TMAPWIDTH];
+                        I8080PPUPalette_t   *palettes[I8080_PPU_TMAPWIDTH];
+                        
+                        for ( i = 0; i < I8080_PPU_TMAPWIDTH; i++, tilemap++ ) {
+                            tiles[i] = &ppu->mapped.ttbl[tilemap->tile_idx].pixels[0];
+                            palettes[i] = &ppu->mapped.ptbl[tilemap->plte_idx];
+                        }
                         for ( i = 0; i < I8080_PPU_TILEHEIGHT; i++, y++ ) {
                             chtype      *rp = row;
                             bool        sprite_overflow;
@@ -428,54 +329,176 @@ I8080PPURenderThread(
                                             y,
                                             &sprite_overflow);
                             if ( sprite_overflow ) ppu->mapped.rgstrs.ppu_status |= kI8080PPUStatusSpriteOverflow;
-                            for ( x = 0; x < ppu->w; x++ ) {    
-                                int     sprite_bg_cidx = 0, sprite_bg_plte,
-                                        sprite_fg_cidx = 0, sprite_fg_plte,
-                                        sprite_idx;
-                                chtype  pixel;
+                            for ( x = 0, k = 0; x < ppu->w; k++ ) {
+                                int         bpt = I8080_PPU_TILEROWBYTES;
                                 
-                                // Sprite check:
-                                I8080PPUSpritePixel(spriteslots, nsprites, x,
-                                                    &sprite_bg_cidx, &sprite_bg_plte,
-                                                    &sprite_fg_cidx, &sprite_fg_plte,
-                                                    &sprite_idx);
+                                while ( bpt-- ) {
+                                    int         ppb = I8080_PPU_PPB;
+                                    uint8_t     pixels = *tiles[k]++;
+                                    
+                                    while ( ppb-- ) {
+                                        int     background_cidx = pixels & ((1 << I8080_PPU_BPP) - 1);
+                                        int     sprite_bg_cidx = 0, sprite_bg_plte,
+                                                sprite_fg_cidx = 0, sprite_fg_plte,
+                                                sprite_idx = -1;
+                                        chtype  pixel;
                                         
-                                if ( sprite_fg_cidx ) {
-                                    pixel = ' ' | COLOR_PAIR(1 + ppu->mapped.ptbl[sprite_fg_plte].cidx[sprite_fg_cidx]);
-                                } else if ( sprite_bg_cidx ) {
-                                    pixel = ' ' | COLOR_PAIR(1 + ppu->mapped.ptbl[sprite_bg_plte].cidx[sprite_bg_cidx]);
-                                } else {
-                                    pixel = ' ' | A_NORMAL;
+                                        // Sprite check:
+                                        I8080PPUSpritePixel(spriteslots, nsprites, x,
+                                                            &sprite_bg_cidx, &sprite_bg_plte,
+                                                            &sprite_fg_cidx, &sprite_fg_plte,
+                                                            &sprite_idx);
+                                        
+                                        if ( sprite_fg_cidx ) {
+                                            pixel = ppu->pixel_defs[ppu->mapped.ptbl[sprite_fg_plte].cidx[sprite_fg_cidx]];
+                                            if ( sprite_idx == 0 && background_cidx ) {
+                                                ppu->mapped.rgstrs.ppu_status |= kI8080PPUStatusSprite0Hit;
+                                            }
+                                        } else {
+                                            
+                                            if ( ! background_cidx && sprite_bg_cidx ) {
+                                                pixel = ppu->pixel_defs[ppu->mapped.ptbl[sprite_bg_plte].cidx[sprite_bg_cidx]];
+                                            } else {
+                                                pixel = background_cidx ? ppu->pixel_defs[palettes[k]->cidx[background_cidx]] : blank;
+                                            }
+                                        }
+                                        *rp++ = pixel;
+                                        
+                                        // Shift next background pixel into place:
+                                        pixels >>= I8080_PPU_BPP;
+                                        x++;
+                                    }
                                 }
-                                *rp++ = pixel;
+                            }
+                            mvwaddchnstr(ppu->wndw, y, 0, row, ppu->w);
+                        }
+                    }
+                } else {
+                    //
+                    // Only rendering the background layer
+                    //
+                    for ( j = 0, y = 0; j < I8080_PPU_TMAPHEIGHT; j++ ) {
+                        uint8_t             *tiles[I8080_PPU_TMAPWIDTH];
+                        I8080PPUPalette_t   *palettes[I8080_PPU_TMAPWIDTH];
+                        
+                        for ( i = 0; i < I8080_PPU_TMAPWIDTH; i++, tilemap++ ) {
+                            tiles[i] = &ppu->mapped.ttbl[tilemap->tile_idx].pixels[0];
+                            palettes[i] = &ppu->mapped.ptbl[tilemap->plte_idx];
+                        }
+                        for ( i = 0; i < I8080_PPU_TILEHEIGHT; i++, y++ ) {
+                            chtype      *rp = row;
+                            
+                            for ( x = 0, k = 0; x < ppu->w; x += I8080_PPU_TILEWIDTH, k++ ) {
+                                uint8_t     pixels = *tiles[k]++;
+                                int         cidx;
+                                
+                                cidx = pixels & 0x3; pixels >>= 2;
+                                *rp++ = cidx ? ppu->pixel_defs[palettes[k]->cidx[cidx]] : blank;
+                                cidx = pixels & 0x3; pixels >>= 2;
+                                *rp++ = cidx ? ppu->pixel_defs[palettes[k]->cidx[cidx]] : blank;
+                                cidx = pixels & 0x3; pixels >>= 2;
+                                *rp++ = cidx ? ppu->pixel_defs[palettes[k]->cidx[cidx]] : blank;
+                                cidx = pixels & 0x3;
+                                *rp++ = cidx ? ppu->pixel_defs[palettes[k]->cidx[cidx]] : blank;
+                                
+                                pixels = *tiles[k]++;
+                                cidx = pixels & 0x3; pixels >>= 2;
+                                *rp++ = cidx ? ppu->pixel_defs[palettes[k]->cidx[cidx]] : blank;
+                                cidx = pixels & 0x3; pixels >>= 2;
+                                *rp++ = cidx ? ppu->pixel_defs[palettes[k]->cidx[cidx]] : blank;
+                                cidx = pixels & 0x3; pixels >>= 2;
+                                *rp++ = cidx ? ppu->pixel_defs[palettes[k]->cidx[cidx]] : blank;
+                                cidx = pixels & 0x3;
+                                *rp++ = cidx ? ppu->pixel_defs[palettes[k]->cidx[cidx]] : blank;
                             }
                             mvwaddchnstr(ppu->wndw, y, 0, row, ppu->w);
                         }
                     }
                 }
-            } else if ( was_rendering ) {
-                wbkgd(ppu->wndw, ' '|COLOR_PAIR(0));
-                has_background = false;
-                was_rendering = false;
-                wclear(ppu->wndw);
+            } else if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderSprites ) {
+                I8080PPUSpriteSlot_t    spriteslots[I8080_PPU_MAXSPRTLN];
+                
+                if ( ! was_rendering ) {
+                    was_rendering = true;
+                }
+                if ( has_background ) {
+                    wbkgd(ppu->wndw, ' '|COLOR_PAIR(0));
+                    has_background = false;
+                }
+                
+                for ( j = 0, y = 0; j < I8080_PPU_TMAPHEIGHT; j++ ) {
+                    for ( i = 0; i < I8080_PPU_TILEHEIGHT; i++, y++ ) {
+                        chtype      *rp = row;
+                        bool        sprite_overflow;
+                        int         nsprites;
+                        
+                        // Load sprites:
+                        nsprites = I8080PPUFillSpriteSlots(
+                                        spriteslots,
+                                        ppu->mapped.sprites,
+                                        ppu->mapped.rgstrs.sprite_offset,
+                                        ppu->mapped.ttbl,
+                                        y,
+                                        &sprite_overflow);
+                        if ( sprite_overflow ) ppu->mapped.rgstrs.ppu_status |= kI8080PPUStatusSpriteOverflow;
+                        for ( x = 0; x < ppu->w; x++ ) {    
+                            int     sprite_bg_cidx = 0, sprite_bg_plte,
+                                    sprite_fg_cidx = 0, sprite_fg_plte,
+                                    sprite_idx;
+                            chtype  pixel;
+                            
+                            // Sprite check:
+                            I8080PPUSpritePixel(spriteslots, nsprites, x,
+                                                &sprite_bg_cidx, &sprite_bg_plte,
+                                                &sprite_fg_cidx, &sprite_fg_plte,
+                                                &sprite_idx);
+                                    
+                            if ( sprite_fg_cidx ) {
+                                pixel = ppu->pixel_defs[ppu->mapped.ptbl[sprite_fg_plte].cidx[sprite_fg_cidx]];
+                            } else if ( sprite_bg_cidx ) {
+                                pixel = ppu->pixel_defs[ppu->mapped.ptbl[sprite_bg_plte].cidx[sprite_bg_cidx]];
+                            } else {
+                                pixel = ' ';
+                            }
+                            *rp++ = pixel;
+                        }
+                        mvwaddchnstr(ppu->wndw, y, 0, row, ppu->w);
+                    }
+                }
             }
-            wnoutrefresh(ppu->wndw);
-            doupdate();
-            pthread_mutex_lock(&ppu->render_lock);
-            ppu->mapped.rgstrs.is_rendering = 0x00;
-            ppu->t_last_frame = now;
-            frame_count++;
-            
-            uint64_t            freq = (ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderMapFlipFreqMask);
-            if ( freq && ((frame_count % (1ULL << (freq >> 4))) == 0) ) {
-                ppu->mapped.rgstrs.ppu_mode ^= kI8080PPUModeMapSelect;
-            }
+        } else if ( was_rendering ) {
+            wbkgd(ppu->wndw, ' '|COLOR_PAIR(0));
+            has_background = false;
+            was_rendering = false;
+            wclear(ppu->wndw);
         }
-        /* f = 60 Hz = 60 / s => t = (1/60) s = (1e6 µs/s)(1/60)s = (1/6)e5 µs */
-        I8080PPUSetTimespecWithMicroseconds(1e6/60.0 - (I8080MicrosecondsMakeNow() - now), &ts);
-        pthread_cond_timedwait(&ppu->render_cond, &ppu->render_lock, &ts);
+        redrawwin(ppu->wndw);
+        wnoutrefresh(ppu->wndw);
+        doupdate();
+        
+        /* the screen draw should take 29780.67 cycles @ 1.79 MHz = 0.016637245810056 s = 16637.25 µs */
+        pthread_mutex_lock(&ppu->render_lock);
+        I8080PPUSetTimespecWithMicroseconds(I8080_PPU_RENDER_DURATION - (I8080MicrosecondsMakeNow() - now), &ts);
+        rc = pthread_cond_timedwait(&ppu->render_cond, &ppu->render_lock, &ts);
+        
+        ppu->t_last_frame = now;
+        frame_count++;
+        
+        uint64_t            freq = (ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderMapFlipFreqMask);
+        if ( freq && ((frame_count % (1ULL << (freq >> 4))) == 0) ) {
+            ppu->mapped.rgstrs.ppu_mode ^= kI8080PPUModeMapSelect;
+        }
+        
+        ppu->mapped.rgstrs.is_rendering = 0x00;
+            
+        /* the VBL lasts for 2273.33 cycles @ 1.79 MHz = 0.001270016759777 s = 1270.02 µs */
+        I8080PPUSetTimespecWithMicroseconds(I8080_PPU_FULL_DURATION - (I8080MicrosecondsMakeNow() - now), &ts);
+        rc = pthread_cond_timedwait(&ppu->render_cond, &ppu->render_lock, &ts);
     }
     pthread_mutex_unlock(&ppu->render_lock);
+#if 0
+    fclose(fptr);
+#endif
     return NULL;
 }
 
@@ -491,15 +514,18 @@ I8080PPUContextReset(
 {
     I8080PPUMapperPrivateContext_t *ppu = (I8080PPUMapperPrivateContext_t*)context;
     I8080CGAPalettePtr          curses_palette;
+    pthread_mutexattr_t         mutex_attrs;
+    pthread_attr_t              thread_attrs;
+    struct sched_param          thread_sched;
     int                         h, w, x, y;
     
     if ( (ppu->cntrl & kI8080PPUControlIsCursesInited) == 0 ) {
+        setlocale(LC_ALL, "");
         // Turn the display on:
         initscr();
         start_color();
         noecho();
         cbreak();
-        curs_set(0);
         if ( ! has_colors() ) {
             endwin();
             CRITICAL("A color terminal is needed.");
@@ -527,6 +553,7 @@ I8080PPUContextReset(
         keypad(ppu->wndw, TRUE);
         nodelay(ppu->wndw, TRUE);
         clearok(ppu->wndw, FALSE);
+        set_escdelay(0);
         leaveok(ppu->wndw, TRUE);
         scrollok(ppu->wndw, FALSE);
         immedok(ppu->wndw, FALSE);
@@ -536,6 +563,7 @@ I8080PPUContextReset(
         curses_palette = I8080CGAPalettes[ppu->public.color_palette_id];
         h = 0; w = 1;
         x = (curses_palette->n_colors > I8080_PPU_MAXCOLOR) ? I8080_PPU_MAXCOLOR : curses_palette->n_colors;
+        ppu->pixel_defs = (chtype*)malloc(x * sizeof(chtype));
         while ( h < x ) {
             short               sr = 1000 * ((double)curses_palette->colors[h].r / 255.0),
                                 sg = 1000 * ((double)curses_palette->colors[h].g / 255.0),
@@ -546,6 +574,7 @@ I8080PPUContextReset(
             color_content(w, s + 1, s + 2, s + 3);
             init_color(w, sr, sg, sb);
             init_pair(w, 0, w);
+            ppu->pixel_defs[h] = ' ' | COLOR_PAIR(w);
             h++, w++;
         }
         ppu->cntrl |= kI8080PPUControlIsCursesInited;
@@ -555,14 +584,40 @@ I8080PPUContextReset(
     wrefresh(ppu->wndw);
     refresh();
     
-    pthread_cond_init(&ppu->render_cond, NULL);
-    pthread_mutex_init(&ppu->render_lock, NULL);
+    /*
+     * With default mutex and thread attributes, the render thread's use
+     * of pthread_cond_timedwait() was extremely variable in its adherance
+     * to the programmed timeout:  a target interval of 16666 µs showed
+     * variance of up to 4000 µs.  At first I suspected my own programming
+     * was to blame and needed more optimization.  But then I dropped all
+     * the pthread_cond_timedwait() calls to run the render loop w/o any
+     * pauses...and the render took 40 µs.  So clearly the render code
+     * wasn't to blame.  With some priority tweaks to the mutex and
+     * thread attributes, the variance in the render loop more or less
+     * disappeared and the 16666 µs timing is stable enough for this
+     * application.
+     */
+    pthread_mutexattr_init(&mutex_attrs);
+    pthread_mutexattr_setpolicy_np(&mutex_attrs, PTHREAD_MUTEX_POLICY_FIRSTFIT_NP);
+    pthread_mutexattr_setprioceiling(&mutex_attrs, sched_get_priority_max(SCHED_FIFO));
+    pthread_mutex_init(&ppu->render_lock, &mutex_attrs);
+    pthread_mutexattr_destroy(&mutex_attrs);
     pthread_mutex_lock(&ppu->render_lock);
-    if ( pthread_create(&ppu->render_thread , NULL, I8080PPURenderThread, ppu) != 0 ) {
+    
+    pthread_cond_init(&ppu->render_cond, NULL);
+    
+    pthread_attr_init(&thread_attrs);
+    pthread_attr_setschedpolicy(&thread_attrs, SCHED_FIFO);
+    pthread_attr_setinheritsched(&thread_attrs, PTHREAD_EXPLICIT_SCHED);
+    thread_sched.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    pthread_attr_setschedparam(&thread_attrs, &thread_sched);
+    
+    if ( pthread_create(&ppu->render_thread , &thread_attrs, I8080PPURenderThread, ppu) != 0 ) {
         endwin();
         CRITICAL("Unable to launch PPU rendering thread.");
         exit(EINVAL);
     }
+    pthread_attr_destroy(&thread_attrs);
     ppu->cntrl |= kI8080PPUControlIsThreadInited;
     memset(&ppu->mapped, 0, sizeof(ppu->mapped));
     ppu->mapped.rgstrs.ppu_mode = kI8080PPUModeInit;
@@ -599,6 +654,10 @@ I8080PPUContextShutdown(
             short               *s = &ppu->saved_colors[4 * i];
             
             if ( *s ) init_color(i + 1, *(s + 1), *(s + 2), *(s + 3));
+        }
+        if ( ppu->pixel_defs ) {
+            free((void*)ppu->pixel_defs);
+            ppu->pixel_defs = NULL;
         }
         nodelay(ppu->wndw, FALSE);
         delwin(ppu->wndw);
