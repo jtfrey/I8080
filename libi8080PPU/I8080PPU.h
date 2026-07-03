@@ -222,6 +222,23 @@ typedef struct __attribute__((packed)) {
 #define I8080PPUTileRefMake(PIDX, TIDX)     {.plte_idx=(PIDX), .tile_idx=(TIDX)}
 
 /**
+ * Data structure prototype for the elements of a PPU text overlay
+ * Text strings can be overlayed on the graphics screen by enabling the
+ * kI8080PPUModeRenderTxtOverlay bit in the PPU mode.  This should be
+ * done only after setting the overlay in the PPU text overlay page.
+ *
+ * Any number of strings can be present, with the sequence terminated
+ * by a struct whose \p s_len field is zero.
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t         s_len;          /*!< number of characters in the string, \p s; bit 7 indicates direction of the
+                                         string (reset = horizontal, set = vertical */
+    uint8_t         y;              /*!< y-coordinate at which the text begins */
+    uint8_t         x;              /*!< x-coordinate at which the text begins */
+    char            s[];            /*!< the characters in the string */
+} I8080PPUTxtOverlay_t;
+
+/**
  * Sprite display options
  * A bitmask that controls sprite drawing.  Each sprite in the PPU context's
  * table can:
@@ -267,24 +284,26 @@ typedef struct __attribute__((packed)) {
  * mode register controls from which page tile map data is drawn.
  * The \p kI8080PPUModeRenderMapFlipFreqMask bits, if set, will force the
  * PPU to flip the \p kI8080PPUModeMapSelect bit at the end of every
- * 2^((mode & 0b11110000) >> 4) rendering cycles.  Since rendering
- * occurs at 60 Hz, setting 0b00010000 will trigger a flip every
- * 2^(0b0001) = 2^1 cycles — or every other cycle.  The same map will
+ * 2^((mode & 0b11100000) >> 5) rendering cycles.  Since rendering
+ * occurs at 60 Hz, setting 0b00100000 will trigger a flip every
+ * 2^(0b001) = 2^1 cycles — or every other cycle.  The same map will
  * be drawn for 2 cycles, then the alternate for 2, etc.  That's a 30 Hz
- * flip rate.  For 0b00100000, every 2^2 = 4 cycles it will switch, for
- * a 15 Hz rate — a nice "lightning" effect.  For 0b01000000 = 2^4, or
+ * flip rate.  For 0b01000000, every 2^2 = 4 cycles it will switch, for
+ * a 15 Hz rate — a nice "lightning" effect.  For 0b10000000 = 2^4, or
  * a 3.75 Hz rate, you get a nice flashing siren effect.
  *
  * When the system is reset the PPU initializes its mode register to
- * zero — no rendering, no background, no sprites.  It is up to the
- * software to enable rendering and the desired layers.
+ * zero — no rendering, no background, no sprites, no text overlay, no
+ * map flipping.  It is up to the software to enable rendering and the
+ * desired features.
  */
 typedef enum __attribute__((packed)) {
     kI8080PPUModeMapSelect              = 0b00000001,       /*!< 0: render tile map 0, 1:render tile map 1 */
     kI8080PPUModeRenderEnable           = 0b00000010,       /*!< 0: disable rendering, 1: enable rendering */
     kI8080PPUModeRenderBackground       = 0b00000100,       /*!< 1/0 do/do not render the background tiles */
     kI8080PPUModeRenderSprites          = 0b00001000,       /*!< 1/0 do/do not render sprites */
-    kI8080PPUModeRenderMapFlipFreqMask  = 0b11110000,       /*!< Masks the bits that determine the rate at
+    kI8080PPUModeRenderTxtOverlay       = 0b00010000,       /*!< 1/0 do/do not render a text overlay on the background */
+    kI8080PPUModeRenderMapFlipFreqMask  = 0b11100000,       /*!< Masks the bits that determine the rate at
                                                                  which the map select gets automatically
                                                                  flipped */
     kI8080PPUModeInit                   = 0                 /*!< By default no rendering, no layers enabled */
@@ -376,6 +395,13 @@ extern const I8080Addr_t I8080PPUAddrOffsetTileMap0;
  * mapping base address.
  */
 extern const I8080Addr_t I8080PPUAddrOffsetTileMap1;
+
+/**
+ * Relative address of text overlay
+ * The 256-bytes of PPU text overlay can be found at this address relative to the
+ * mapping base address.
+ */
+extern const I8080Addr_t I8080PPUAddrOffsetTxtOverlay;
 
 /**
  * A PPU memory mapper context

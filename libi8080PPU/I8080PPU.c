@@ -52,12 +52,13 @@ typedef struct {
 
 typedef struct {
     I8080PPUMapperContext_t     public;
-    struct {
+    struct __attribute__((packed)) {
         I8080PPURegisters_t     rgstrs;                         /*  16 B */
         I8080PPUPalette_t       ptbl[I8080_PPU_PTBLDIM];        /*  32 B */
         I8080PPUSprite_t        sprites[I8080_PPU_MAXSPRT];     /* 208 B */
         I8080PPUTile_t          ttbl[I8080_PPU_TTBLDIM];        /* 256 B */
         I8080PPUTileRef_t       map[2][I8080_PPU_TMAPDIM];      /* 512 B */
+        uint8_t                 txtoverlay[256];                /* 256 B */
     } mapped;
     I8080SystemPtr              sys8080;
     I8080PPUControl_t           cntrl;
@@ -74,12 +75,21 @@ typedef struct {
 
 //
 
+typedef struct {
+    uint8_t         s_len;
+    uint8_t         y;
+    uint8_t         x;
+} I8080PPUTxtOverlayHdr_t;
+
+//
+
 #define I8080_PPU_RGSTRS_OFFSET     offsetof(I8080PPUMapperPrivateContext_t, mapped.rgstrs)
 #define I8080_PPU_PTBL_OFFSET       offsetof(I8080PPUMapperPrivateContext_t, mapped.ptbl)
 #define I8080_PPU_SPRITES_OFFSET    offsetof(I8080PPUMapperPrivateContext_t, mapped.sprites)
 #define I8080_PPU_TTBL_OFFSET       offsetof(I8080PPUMapperPrivateContext_t, mapped.ttbl)
 #define I8080_PPU_MAP0_OFFSET       offsetof(I8080PPUMapperPrivateContext_t, mapped.map[0])
 #define I8080_PPU_MAP1_OFFSET       offsetof(I8080PPUMapperPrivateContext_t, mapped.map[1])
+#define I8080_PPU_TXTOVRLY_OFFSET   offsetof(I8080PPUMapperPrivateContext_t, mapped.txtoverlay)
 
 #define I8080_PPU_RGSTRS_ADDR       0
 #define I8080_PPU_PTBL_ADDR         (I8080_PPU_PTBL_OFFSET - I8080_PPU_RGSTRS_OFFSET)
@@ -87,15 +97,17 @@ typedef struct {
 #define I8080_PPU_TTBL_ADDR         (I8080_PPU_TTBL_OFFSET - I8080_PPU_RGSTRS_OFFSET)
 #define I8080_PPU_MAP0_ADDR         (I8080_PPU_MAP0_OFFSET - I8080_PPU_RGSTRS_OFFSET)
 #define I8080_PPU_MAP1_ADDR         (I8080_PPU_MAP1_OFFSET - I8080_PPU_RGSTRS_OFFSET)
+#define I8080_PPU_TXTOVRLY_ADDR     (I8080_PPU_TXTOVRLY_OFFSET - I8080_PPU_RGSTRS_OFFSET)
 
-#define I8080_PPU_END_ADDR          (I8080_PPU_MAP0_ADDR + sizeof(I8080PPUTileRef_t[2][I8080_PPU_TMAPDIM]))
+#define I8080_PPU_END_ADDR          (I8080_PPU_TXTOVRLY_ADDR + 256)
 
 const I8080Addr_t I8080PPUAddrOffsetRegisters = I8080_PPU_RGSTRS_ADDR;
 const I8080Addr_t I8080PPUAddrOffsetPaletteTable = I8080_PPU_PTBL_ADDR;
 const I8080Addr_t I8080PPUAddrOffsetSpriteTable = I8080_PPU_SPRITES_ADDR;
 const I8080Addr_t I8080PPUAddrOffsetTileTable = I8080_PPU_TTBL_ADDR;
 const I8080Addr_t I8080PPUAddrOffsetTileMap0 = I8080_PPU_MAP0_ADDR;
-const I8080Addr_t I8080PPUAddrOffsetTileMap1 =I8080_PPU_MAP1_ADDR;
+const I8080Addr_t I8080PPUAddrOffsetTileMap1 = I8080_PPU_MAP1_ADDR;
+const I8080Addr_t I8080PPUAddrOffsetTxtOverlay = I8080_PPU_TXTOVRLY_ADDR;
 
 //
 
@@ -262,7 +274,7 @@ I8080PPURenderThread(
     ppu->t_last_frame = 0;
     was_rendering = (ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderEnable) == kI8080PPUModeRenderEnable;
     if ( was_rendering ) {
-        wbkgd(ppu->wndw, ' '|COLOR_PAIR(1 + ppu->mapped.ptbl[0].cidx[0]));
+        wbkgd(ppu->wndw, ' '| ppu->pixel_defs[ppu->mapped.ptbl[0].cidx[0]]);
         has_background = true;
     }
     
@@ -472,6 +484,29 @@ I8080PPURenderThread(
             was_rendering = false;
             wclear(ppu->wndw);
         }
+        
+        if ( ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderTxtOverlay ) {
+            unsigned char                   *overlay_base = &ppu->mapped.txtoverlay[0];
+            I8080PPUTxtOverlayHdr_t         overlay = *((I8080PPUTxtOverlayHdr_t*)overlay_base);
+            
+            while ( overlay.s_len ) {
+                overlay_base += sizeof(I8080PPUTxtOverlayHdr_t);
+                if ( overlay.s_len & 0x80 ) {
+                    overlay.s_len ^= 0x80;
+                    while ( overlay.s_len-- ) {
+                        chtype      c = (mvwinch(ppu->wndw, overlay.y, overlay.x) & ~A_CHARTEXT) | *overlay_base++;
+                        mvwaddch(ppu->wndw, overlay.y++, overlay.x, c);
+                    }
+                } else {
+                    while ( overlay.s_len-- ) {
+                        chtype      c = (mvwinch(ppu->wndw, overlay.y, overlay.x) & ~A_CHARTEXT) | *overlay_base++;
+                        mvwaddch(ppu->wndw, overlay.y, overlay.x++, c);
+                    }
+                }
+                overlay = *((I8080PPUTxtOverlayHdr_t*)overlay_base);
+            }
+        }
+        
         redrawwin(ppu->wndw);
         wnoutrefresh(ppu->wndw);
         doupdate();
@@ -485,7 +520,7 @@ I8080PPURenderThread(
         frame_count++;
         
         uint64_t            freq = (ppu->mapped.rgstrs.ppu_mode & kI8080PPUModeRenderMapFlipFreqMask);
-        if ( freq && ((frame_count % (1ULL << (freq >> 4))) == 0) ) {
+        if ( freq && ((frame_count % (1ULL << (freq >> 5))) == 0) ) {
             ppu->mapped.rgstrs.ppu_mode ^= kI8080PPUModeMapSelect;
         }
         
@@ -561,19 +596,34 @@ I8080PPUContextReset(
         
         // Load the color palette:
         curses_palette = I8080CGAPalettes[ppu->public.color_palette_id];
-        h = 0; w = 1;
-        x = (curses_palette->n_colors > I8080_PPU_MAXCOLOR) ? I8080_PPU_MAXCOLOR : curses_palette->n_colors;
-        ppu->pixel_defs = (chtype*)malloc(x * sizeof(chtype));
+        h = 0; w = 3;
+        x = (curses_palette->n_colors + 2 > I8080_PPU_MAXCOLOR) ? I8080_PPU_MAXCOLOR - 2 : curses_palette->n_colors;
+        ppu->pixel_defs = (chtype*)malloc((x + 2) * sizeof(chtype));
+        // Color 1 set to black:
+        ppu->saved_colors[0] = 1; color_content(1, &ppu->saved_colors[1], &ppu->saved_colors[2], &ppu->saved_colors[3]);
+        init_color(1, 0, 0, 0);
+        // Color 2 set to white:
+        ppu->saved_colors[4] = 1; color_content(2, &ppu->saved_colors[5], &ppu->saved_colors[6], &ppu->saved_colors[7]);
+        init_color(2, 1000, 1000, 1000);
         while ( h < x ) {
             short               sr = 1000 * ((double)curses_palette->colors[h].r / 255.0),
                                 sg = 1000 * ((double)curses_palette->colors[h].g / 255.0),
                                 sb = 1000 * ((double)curses_palette->colors[h].b / 255.0);
-            short               *s = &ppu->saved_colors[4 * h];
+            short               mins = (sr < sg) ? 
+                                         ((sr < sb) ? sr : sb) :
+                                         ((sg < sb) ? sg : sb);
+            short               maxs = (sr > sg) ? 
+                                         ((sr > sb) ? sr : sb) :
+                                         ((sg > sb) ? sg : sb);
+            short               l = (mins + maxs) >> 1;                 // Brightness level (from RGB -> HSL)
+            short               *s = &ppu->saved_colors[8 + 4 * h];
         
             *s = 1;
             color_content(w, s + 1, s + 2, s + 3);
             init_color(w, sr, sg, sb);
-            init_pair(w, 0, w);
+            // If the color's brightness is greater than 50%, use black as the foreground;
+            // otherwise, use white:
+            init_pair(w, (l > 500) ? 1 : 2, w);
             ppu->pixel_defs[h] = ' ' | COLOR_PAIR(w);
             h++, w++;
         }

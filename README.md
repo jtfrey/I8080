@@ -703,3 +703,93 @@ I8080Timer:
 The command line shows the `--2mhz` flag's being used to limit the emulator to the 2 MHz clock speed of which the 8080 was capable.  The total elapsed time of 36 seconds matches well with the 35680 ms of emulated CPU time.
 
 One caveat to emulation of interrupts is when an `IN #` instruction is blocking, waiting on i/o.  If a timer elapses and fires while the i/o is blocking the interrupt will be raised but will wait until the currently-executing `IN #` instruction completes.  This didn't occur to me until I at first put a "please press any key" pause in the program and didn't understand why interrupts weren't being processed — until I *did* press a key!
+
+
+### Memory copying and CRCs
+
+Part of the ISA extensions in some of the assembly projects is macros and subroutines that copy bytes from one location to another in memory.  This seems like such a simple task to a modern programmer, but consider what's required:
+
+- A 16-bit register holding the source address
+- A 16-bit register holding the destination address
+- An 8- or 16-bit register holding the number of bytes to copy
+- An 8- or 16-bit register to facilitate the read-then-write of bytes
+
+The 8080 has three 16-bit registers and the accumulator, so for anything over a single page of bytes all of the CPU registers will be used for the operation.
+
+
+Loading/storing a single byte has a number of methods:  direct address (LDA/STA), indirect via BC/DE (LDAX/STAX), or indirect via HL (MOV *, M).  The first two implictly load into the accumulator, the third can target any of the 8-bit registers.  Upon completing the copy of a single byte, the addresses must be incremented.  The variablity of the address precludes direct access.  Assuming the source address is in DE and the destination is in HL, the most efficient copy kernel is:
+
+```
+        LDAX    D           ; 7 cycles
+        MOV     M, A        ; 7 cycles
+        INX     D           ; 5 cycles
+        INX     H           ; 5 cycles
+```
+
+If the number of bytes to copy is in BC, then that counter must decremented and branching used to repeat the kernel:
+
+```
+-:      LDAX    D           ;  7 cycles
+        MOV     M, A        ;  7 cycles
+        INX     D           ;  5 cycles
+        INX     H           ;  5 cycles
+        DCX     B           ;  5 cycles
+        MOV     A, B        ;  5 cycles
+        ORA     C           ;  4 cycles
+        JNZ     -           ; 10 cycles
+```
+
+To copy two pages of data, 512 B * 48 cycles/B = 24576 cycles, or 12288 µs of CPU time:  about 12 ms.  To copy the entire RAM footprint of 64 KiB would take 1.57 s!  The machine code is 10 B.
+
+The gymnastics w.r.t. the BC register's reaching zero are necessary because the 16-bit INX/DCX instructions do NOT affect the status register.  For this reason, a second set of "short memory copy" subroutines are present that are limited to 256 bytes of data:  because the DCR instruction _does_ affect the status register, it takes 9 fewer cycles per byte.
+
+Just over 20% of the time is associated with the JNZ instruction; if we could eliminate some of those instructions, the code would be more efficient — but occupy more memory itself.  Assuming the memory region to copy is a length divisible by 4, we can rewrite the code as:
+
+```
+-:      LDAX    D           ;  7 cycles
+        MOV     M, A        ;  7 cycles
+        INX     D           ;  5 cycles
+        INX     H           ;  5 cycles
+        DCX     B           ;  5 cycles
+        MOV     A, B        ;  5 cycles
+        ORA     C           ;  4 cycles
+        LDAX    D           ;  7 cycles
+        MOV     M, A        ;  7 cycles
+        INX     D           ;  5 cycles
+        INX     H           ;  5 cycles
+        DCX     B           ;  5 cycles
+        MOV     A, B        ;  5 cycles
+        ORA     C           ;  4 cycles
+        LDAX    D           ;  7 cycles
+        MOV     M, A        ;  7 cycles
+        INX     D           ;  5 cycles
+        INX     H           ;  5 cycles
+        DCX     B           ;  5 cycles
+        MOV     A, B        ;  5 cycles
+        ORA     C           ;  4 cycles
+        LDAX    D           ;  7 cycles
+        MOV     M, A        ;  7 cycles
+        INX     D           ;  5 cycles
+        INX     H           ;  5 cycles
+        DCX     B           ;  5 cycles
+        MOV     A, B        ;  5 cycles
+        ORA     C           ;  4 cycles
+        JNZ     -           ; 10 cycles
+```
+
+That's 162 cycles for every 4 B, versus 192 cycles in the generic implementation:  about 16% fewer cycles.  In exchange the machine code has grown to 31 B.  If the size is divisible by 4 and large enough to warrant optimization, then it's probably divisible by 8, too.  Extending the loop unroll further, the code size and efficiency improvement can be calculated:
+
+| Unroll level | Cycles | Bytes of code | Improvement | Rel. improvement |
+| -----------: | -----: | ------------: | ----------: | -------------------: |
+| 1 | 48 | 10 | 0.00% | |	
+| 2 | 86 | 17 | 10.42% | 10.42% |
+| 4 | 162 | 31 | 15.63% | 5.21% |
+| 8 | 314 | 59 | 18.23% | 2.60% |
+| 16 | 618 | 115 | 19.53% | 1.30% |
+| 32 | 1226 | 227 | 20.18% | 0.65% |
+| 64 | 2442 | 451 | 20.51% | 0.33% |
+| 128 | 4874 | 899 | 20.67% | 0.16% |
+
+With the tradeoff of increasing code size, an unroll level of 8 stands as the inflection point.  With any algorithm like this, it's good to verify that what gets copied matches what was being copied:  enter some cyclic redundancy check code.
+
+CRC-8 and CRC-16 algorithms generally consist of bit shift and exclusive OR operations against an operating register and an arbitrary-length sequence of bytes.  The register gets initialized with some value, and after a series of operations that register holds the check value.  The CRC-8 CDMA2000 and CRC-16 MODBUS algorithms are implemented in the ISA extensions.  The BC register is loaded with the number of bytes starting at the address in the HL register and the check value is returned either in the D (CRC-8) or DE (CRC-16) register.

@@ -15,8 +15,13 @@
 #include "I8e8eBSMObj.h"
 #include "I8e8eFileDeviceObj.h"
 #include "I8080CGA.h"
-#include "I8080PPU.h"
-#include "I8080DPad.h"
+#ifdef I8E8E_HAVE_PPU
+#   include "I8080PPU.h"
+#   include "I8080DPad.h"
+#endif
+#ifdef I8E8E_HAVE_APU
+#   include "I8080APU.h"
+#endif
 #include "I8080Timer.h"
 #include <fcntl.h>
 #include <signal.h>
@@ -68,9 +73,14 @@ static struct option i8e8e_options[] = {
         { "tty",            required_argument,  0,  't' },
         { "timers",         required_argument,  0,  'T' },
         { "cga",            required_argument,  0,  'c' },
+#ifdef I8E8E_HAVE_PPU
         { "ppu",            required_argument,  0,  'g' },
         { "dpad",           optional_argument,  0,  'd' },
         { "list-palettes",  no_argument,        0,  'p' },
+#endif
+#ifdef I8E8E_HAVE_APU
+        { "apu",            required_argument,  0,  'a' },
+#endif
         { NULL,             0,                  0,   0  }
     };
 
@@ -79,7 +89,14 @@ static const char *i8e8e_options_str =
 #ifdef HAS_MMAP
         "m:"
 #endif
-        "U:b:C:k:P:S:2Af:t:T:c:g:d:p";
+        "U:b:C:k:P:S:2Af:t:T:c:"
+#ifdef I8E8E_HAVE_PPU
+        "g:d:p"
+#endif
+#ifdef I8E8E_HAVE_APU
+        "a:"
+#endif
+        "";
 
 void
 usage(
@@ -112,7 +129,7 @@ usage(
             "                                   returned on read\n"
             "    -b/--bsm <bsm-spec>            add a bank-swapped memory expander in the\n"
             "                                   specified page range\n"
-            "    -D/--core <filename>           when the emulator exits, dump the system memory\n"
+            "    -C/--core <filename>           when the emulator exits, dump the system memory\n"
             "                                   to <filename>\n"
             "    -k/--core-kind <core-kind>     select which kind of core dump to make; default\n"
             "                                   is binary\n"
@@ -135,6 +152,7 @@ usage(
             "    -t/--tty <tty-options>         configure TTY options\n"
             "    -T/--timers <timers-options>   configure realtime timers\n"
             "    -c/--cga <cga-options>         configure a Curses Graphics Adapter...\n"
+#ifdef I8E8E_HAVE_PPU
             "    -g/--ppu <ppu-options>         ...or configure a Picture Processing Unit\n"
             "    -d/--dpad                      attach a D-pad controller input device on\n"
             "                                   the first available input channel number\n"
@@ -142,6 +160,10 @@ usage(
             "                                   number\n"
             "    -p/--list-palettes             list the available CGA color palettes\n"
             "                                   then exit\n"
+#endif
+#ifdef I8E8E_HAVE_APU
+            "    -a/--apu <apu-options>         configure an Audio Processing Unit\n"
+#endif
             "\n"
             "    <log-dest> = <filepath>{:<buffer>}\n\n"
             "        The file at <filepath> will have logged information appended to it.\n"
@@ -238,7 +260,8 @@ usage(
             "        by providing a <w> and <h> (width and height) and optionally the origin\n"
             "        of the resulting window, (<x>, <y>).\n"
             "\n"
-            "    <ppu-options> = @<addr>{:<palette-id>}\n"
+#ifdef I8E8E_HAVE_PPU
+            "    <ppu-options> = <addr>{:<palette-id>}\n"
             "        Create a curses-based Picture Processing Unit that will be mapped at\n"
             "        memory location <addr>.  The PPU and CGA memory mappers are mutually\n"
             "        exclusive.  The first 16-bytes of the PPU function as 8-bit registers\n"
@@ -249,6 +272,16 @@ usage(
             "        sprites usually requires a specific <palette-id> be used.  The default\n"
             "        is the kI8080CGAPaletteNES2C02 palette.\n"
             "\n"
+#endif
+#ifdef I8E8E_HAVE_APU
+            "    <apu-options> = <addr>\n"
+            "        Create an Audio Processing Unit that will be mapped at memory location\n"
+            "        <addr>.  Bytes starting at <addr> function as control registers for the\n"
+            "        pairs of pulse and triangle channels as well as the noise channel.  See the\n"
+            "        libi8008APU documentation for an in-depth discussion of the available\n"
+            "        registers.\n"
+            "\n"
+#endif
             "    <core-kind> = text | binary\n"
             "        The kind of core dump to generate.  A text-based dump abbreviates ranges\n"
             "        of zeroes and omits mapped pages, whereas a binary dump will be the full\n"
@@ -269,6 +302,8 @@ usage(
 
 //
 
+#ifdef I8E8E_HAVE_PPU
+
 typedef struct {
     I8080Addr_t                 base_addr;
     I8080CGAPaletteId_t         palette_id;
@@ -284,14 +319,7 @@ I8e8ePPUParse(
     const char      *in_str_orig = in_str;
     const char      *s_end;
     
-    // Better start with an '@':
-    if ( *in_str != '@' ) {
-        ERROR("Invalid PPU specification: %s", in_str_orig);
-        return false;
-    }
-    
     // Parse the address string:
-     ++in_str;
     if ( ! I8080AddrParse(in_str, &out_ppu->base_addr, &s_end) ) {
         ERROR("Invalid PPU mapping address: %s", in_str_orig);
         return false;
@@ -311,6 +339,42 @@ I8e8ePPUParse(
     }
     return true;
 }
+
+#endif
+
+//
+
+#ifdef I8E8E_HAVE_APU
+
+typedef struct {
+    I8080Addr_t                 base_addr;
+    I8080APUMapperContextPtr    context;
+} I8e8eAPU_t;
+
+bool
+I8e8eAPUParse(
+    const char      *in_str,
+    I8e8eAPU_t      *out_apu
+)
+{
+    const char      *in_str_orig = in_str;
+    const char      *s_end;
+    
+    // Parse the address string:
+    if ( ! I8080AddrParse(in_str, &out_apu->base_addr, &s_end) ) {
+        ERROR("Invalid APU mapping address: %s", in_str_orig);
+        return false;
+    }
+    
+    if ( *s_end ) {
+        ERROR("Invalid APU mapping: %s", in_str_orig);
+        ERROR("                     %*s^", (s_end - in_str_orig), "");
+        return false;
+    }
+    return true;
+}
+
+#endif
 
 //
 
@@ -514,10 +578,16 @@ main(
     I8080Addr_t                 SP = 0x0000, PC=0x0000;
     I8e8eCGA_t                  cga;
     bool                        have_cga = false;
+#ifdef I8E8E_HAVE_PPU
     I8e8ePPU_t                  ppu;
     bool                        have_ppu = false;
     I8080DevBusRegisterId       dpad_dev_id = kI8080DevBusRegisterIdNextAvail;
     bool                        have_dpad = false;
+#endif
+#ifdef I8E8E_HAVE_APU
+    I8e8eAPU_t                  apu;
+    bool                        have_apu = false;
+#endif
     I8e8eMemObj_t               *memobjs = NULL, *memobjs_tail = NULL;
     I8e8eROMMappingMode_t       rom_mapmode = kI8e8eROMMappingModeAlloc;
     I8e8eBSMObj_t               *bsmobjs = NULL, *bsmobjs_tail = NULL;
@@ -757,7 +827,8 @@ main(
                 have_cga = true;
                 break;
             }
-            
+
+#ifdef I8E8E_HAVE_PPU
             case 'g': {
                 if ( ! I8e8ePPUParse(optarg, &ppu) ) exit(EINVAL);
                 have_ppu = true;
@@ -790,13 +861,25 @@ main(
                 fputc('\n', stdout);
                 exit(0);
             }
+#endif
+
+#ifdef I8E8E_HAVE_APU
+            case 'a': {
+                if ( ! I8e8eAPUParse(optarg, &apu) ) exit(EINVAL);
+                have_apu = true;
+                break;
+            }
+#endif
+
         }
     }
     
+#ifdef I8E8E_HAVE_PPU
     if ( have_ppu && have_cga ) {
         ERROR("CGA and PPU memory mapped devices cannot be used together");
         exit(EINVAL);
     }
+#endif
     
     // Static stuff:
     I8080DeviceTTYContext_t         tty_context = {
@@ -858,7 +941,8 @@ main(
             exit(EINVAL);
         }
     }
-    
+
+#ifdef I8E8E_HAVE_PPU
     // Was PPU requested?
     if ( have_ppu ) {
         I8080PPUMapperContextPtr    ppu_context;
@@ -878,6 +962,22 @@ main(
             exit(EINVAL);
         }
     }
+#endif
+
+#ifdef I8E8E_HAVE_APU
+    // Was APU requested?
+    if ( have_apu ) {
+        I8080APUMapperContextPtr    apu_context;
+        I8080MemMapperRef_t         apu_mapper = { .callbacks = *I8080APUMapperCallbacks };
+        
+        apu_context = I8080APUMapperContextCreate();
+        apu_mapper.context = apu_context;
+        apu_mapper.addr_range = I8080AddrRangeCreate(apu.base_addr, I8080APUMapperAddressRangeLength);
+        if ( ! I8080MemRegisterMapper(sys8080->sysmem, &apu_mapper) ) {
+            exit(EINVAL);
+        }
+    }
+#endif
     
     // Realtime timer?
     if ( have_timer ) {
