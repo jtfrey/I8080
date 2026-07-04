@@ -49,6 +49,11 @@ APU_RGSTR_N_ENVLVLHI        equ     APU_BASE +   25h
 APU_RGSTR_N_DURLO           equ     APU_BASE +   26h
 APU_RGSTR_N_DURHI           equ     APU_BASE +   27h
 
+APU_RGSTR_DPCM_STATE        equ     APU_BASE +   28h
+APU_RGSTR_DPCM_ADDR_LO      equ     APU_BASE +   29h
+APU_RGSTR_DPCM_ADDR_HI      equ     APU_BASE +   2Ah
+APU_RGSTR_DPCM_LENGTH_LO    equ     APU_BASE +   2Bh
+APU_RGSTR_DPCM_LENGTH_HI    equ     APU_BASE +   2Ch
 
 
 APU_M_STATE_8BFREQ          equ     10000000b
@@ -76,6 +81,11 @@ APU_N_STATE_ENVCONST        equ     1000000b
 APU_N_STATE_ENVLOOP         equ     100000b
 APU_N_STATE_SHORTLOOP       equ     10000b
 APU_N_STATE_PERIOD_MASK     equ     1111b
+
+
+APU_DPCM_STATE_ENABLE       equ     10000000b
+APU_DPCM_STATE_LOOP         equ     1000000b
+APU_DPCM_RATE_MASK          equ     1111b
 
 APU_NOTE_C1_IDX		        equ		000h
 APU_NOTE_CSHARP1_IDX	    equ		002h

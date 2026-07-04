@@ -203,6 +203,39 @@ typedef struct __attribute__((packed)) {
 } I8080APUNoiseChannelRegisters_t;
 
 /**
+ * Delta PCM generator registers
+ * Each delta PCM audio channel is controlled by a set of memory-mapped
+ * registers.  All multi-byte values are ordered little-endian.
+ *
+ * The registers occupy 5 consecutive bytes.
+ *
+ *     byte offset      description
+ *     0                control bitmask; when this register is changed, the generator in question
+ *                      is reset with the register values, so this register should be modified LAST
+ *     1                the address in system RAM at which the DPCM samples start
+ *     3                the number of DPCM sample bytes in the sample
+ */
+typedef struct __attribute__((packed)) {
+#ifdef BITS_BIG_ENDIAN
+    uint8_t             is_enabled : 1;
+    uint8_t             is_looped : 1;
+    uint8_t             : 2;
+    uint8_t             rate : 4;
+#else
+    uint8_t             rate : 4;               /*!< the sample rate as a divider of the 44100 Hz native rate; the divider is the
+                                                     value of this field + 1, e.g. if rate=0, the divider d=1 and the sample rate
+                                                     is 44100 Hz.  By comparison, for rate=6 the sample rate is 7350 Hz. */
+    uint8_t             : 2;
+    uint8_t             is_looped : 1;          /*!< 1 = replay the sample sequence indefinitely, 0 = play once */
+    uint8_t             is_enabled : 1;         /*!< 1 = the channel is enabled, 0 = muted */
+#endif
+    uint8_t             address_lo,
+                        address_hi;             /*!< address of the audio samples in emulator RAM */
+    uint8_t             length_lo,
+                        length_hi;              /*!< length (in bytes) of the audio samples */
+} I8080APUDPCMChannelRegisters_t;
+
+/**
  * APU channel registers
  * The APU implements a pair of pulse waveform generators; a pair of triangle/sawtooth
  * waveform generators; and a noise generator.  The channels are controlled via memory-mapped
@@ -216,7 +249,8 @@ typedef struct __attribute__((packed)) {
     I8080APUTriangleChannelRegisters_t  triangle_0;     /*!< 0x15: triangle/sawtooth waveform channel 0 registers (7 bytes) */
     I8080APUTriangleChannelRegisters_t  triangle_1;     /*!< 0x1C: triangle/sawtooth waveform channel 1 registers (7 bytes) */
     I8080APUNoiseChannelRegisters_t     noise;          /*!< 0x23: noise generator ( 5 bytes ) */
-                                                        /*   0x28 */
+    I8080APUDPCMChannelRegisters_t      dpcm;           /*!< 0x28: delta PCM (5 bytes) */
+                                                        /*   0x2D */
 } I8080APURegisters_t;
 
 /**
@@ -272,7 +306,13 @@ typedef enum {
     kI8080APURegisterIndexNoiseDurationLo               = 38,
     kI8080APURegisterIndexNoiseDurationHi               = 39,
     //
-    kI8080APURegisterIndexMax                           = 40
+    kI8080APURegisterIndexDPCMState                     = 40,
+    kI8080APURegisterIndexDPCMAddressLo                 = 41,
+    kI8080APURegisterIndexDPCMAddressHi                 = 42,
+    kI8080APURegisterIndexDPCMLengthLo                  = 43,
+    kI8080APURegisterIndexDPCMLengthHi                  = 44,
+    //
+    kI8080APURegisterIndexMax                           = 45
 } I8080APURegisterIndex_t;
 
 /**
@@ -316,6 +356,13 @@ extern const I8080Addr_t I8080APUAddrOffsetTriangle1Registers;
  * mapping base address.
  */
 extern const I8080Addr_t I8080APUAddrOffsetNoiseRegisters;
+
+/**
+ * Relative address of APU DPCM channel registers
+ * The APU DPCM channel registers can be found at this address relative to the
+ * mapping base address.
+ */
+extern const I8080Addr_t I8080APUAddrOffsetDPCMRegisters;
 
 /**
  * Type of a pointer to a APU mapper context

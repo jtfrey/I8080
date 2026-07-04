@@ -140,6 +140,30 @@ typedef struct {
 } I8080APUNoiseChannelState_t;
 
 /**
+ * DPCM channel state
+ * Each DPCM channel pre-buffers samples from system memory, processing those
+ * samples one bit at a time to update a cumulative sample value (1=sample+1, 0=sample-1).
+ */
+typedef struct {
+    bool                        is_enabled; /*!< false = mute this channel, true = produce samples */
+    bool                        is_looped;  /*!< false = play once, true = replay indefinitely */
+    I8080MemRef                 sysmem;     /*!< reference to the system memory to fetch samples */
+    I8080Addr_t                 addr;       /*!< the configured sample data address */
+    I8080Addr_t                 nbytes;     /*!< the configured sample data byte length */
+    I8080Addr_t                 cur_addr;   /*!< address of next sample */
+    I8080Addr_t                 cur_nbytes; /*!< number of bytes of sample data remaining */
+    uint8_t                     samples[16];/*!< pre-fetched sample buffer */
+    uint8_t                     *sample_ptr;/*!< pointer to in-scope sample being processed */
+    uint8_t                     *sample_end;/*!< pointer to the byte beyond the last buffered sample */
+    uint8_t                     sample_mask;/*!< bitmask used to isolate the next sample bit; starts at 0x1 and shifts left; when
+                                                 it reaches zero, the next sample byte is selected and \p sample_mask is reset to 0x1 */
+    int16_t                     sample;     /*!< the current sample value */
+    uint16_t                    tick;       /*!< updated on each 44100 Hz cycle */
+    uint16_t                    length;     /*!< clock the next sample value once the \p tick reaches this value; the
+                                                 value of the rate register + 1 */
+} I8080APUDPCMChannelState_t;
+
+/**
  * APU state
  * The APU state includes a global frame tick (count of 1/60 s periods), the
  * maximum output volume level, and state for each of its constituent
@@ -154,6 +178,7 @@ typedef struct {
     I8080APUTriangleChannelState_t  triangle_0;     /*!< triangle channel 0 state */
     I8080APUTriangleChannelState_t  triangle_1;     /*!< triangle channel 1 state */
     I8080APUNoiseChannelState_t     noise;          /*!< noise channel state */
+    I8080APUDPCMChannelState_t      dpcm;           /*!< delta PCM channel state */
 } I8080APUState_t;
 
 /**
@@ -177,6 +202,7 @@ typedef struct {
 #define I8080_APU_TRIANGLE_0_RGSTRS_OFFSET  offsetof(I8080APUMapperPrivateContext_t, rgstrs.triangle_0)
 #define I8080_APU_TRIANGLE_1_RGSTRS_OFFSET  offsetof(I8080APUMapperPrivateContext_t, rgstrs.triangle_1)
 #define I8080_APU_NOISE_RGSTRS_OFFSET       offsetof(I8080APUMapperPrivateContext_t, rgstrs.noise)
+#define I8080_APU_DPCM_RGSTRS_OFFSET        offsetof(I8080APUMapperPrivateContext_t, rgstrs.dpcm)
 
 #define I8080_APU_MASTER_RGSTRS_ADDR        0
 #define I8080_APU_PULSE_0_RGSTRS_ADDR       (I8080_APU_PULSE_0_RGSTRS_OFFSET - I8080_APU_MASTER_RGSTRS_OFFSET)
@@ -184,6 +210,7 @@ typedef struct {
 #define I8080_APU_TRIANGLE_0_RGSTRS_ADDR    (I8080_APU_TRIANGLE_0_RGSTRS_OFFSET - I8080_APU_MASTER_RGSTRS_OFFSET)
 #define I8080_APU_TRIANGLE_1_RGSTRS_ADDR    (I8080_APU_TRIANGLE_1_RGSTRS_OFFSET - I8080_APU_MASTER_RGSTRS_OFFSET)
 #define I8080_APU_NOISE_RGSTRS_ADDR         (I8080_APU_NOISE_RGSTRS_OFFSET - I8080_APU_MASTER_RGSTRS_OFFSET)
+#define I8080_APU_DPCM_RGSTRS_ADDR          (I8080_APU_DPCM_RGSTRS_OFFSET - I8080_APU_MASTER_RGSTRS_OFFSET)
 
 #define I8080_APU_END_ADDR                  sizeof(I8080APURegisters_t)
 
@@ -193,6 +220,7 @@ const I8080Addr_t I8080APUAddrOffsetPulse1Registers = I8080_APU_PULSE_1_RGSTRS_A
 const I8080Addr_t I8080APUAddrOffsetTriangle0Registers = I8080_APU_TRIANGLE_0_RGSTRS_ADDR;
 const I8080Addr_t I8080APUAddrOffsetTriangle1Registers = I8080_APU_TRIANGLE_1_RGSTRS_ADDR;
 const I8080Addr_t I8080APUAddrOffsetNoiseRegisters = I8080_APU_NOISE_RGSTRS_ADDR;
+const I8080Addr_t I8080APUAddrOffsetDPCMRegisters = I8080_APU_DPCM_RGSTRS_ADDR;
 
 //
 
@@ -478,6 +506,80 @@ I8080APUNoiseChannelSample(
 //
 
 static inline
+int
+I8080APUDPCMChannelPreFetch(
+    I8080APUDPCMChannelState_t          *ch
+)
+{
+    int                                 n_fetch = 0;
+    
+    ch->sample_mask = 0x1;
+    ch->sample_ptr = ch->sample_end = ch->samples;
+    while ( (n_fetch < 16) && ch->cur_nbytes ) *ch->sample_end++ = I8080MemRead(ch->sysmem, ch->cur_addr++), ch->cur_nbytes--, n_fetch++;
+    return n_fetch;
+}
+
+static inline
+void
+I8080APUDPCMChannelInit(
+    I8080APUDPCMChannelState_t          *ch,
+    I8080APUDPCMChannelRegisters_t      *rgstrs,
+    I8080APUMasterRegisters_t           *master
+)
+{
+    if ( (ch->is_enabled = rgstrs->is_enabled) ) {
+        ch->is_looped = rgstrs->is_looped;
+        ch->tick = 0;
+        ch->sample = 0;
+        ch->length = 1 + rgstrs->rate;
+        ch->cur_addr = ch->addr = rgstrs->address_lo | (rgstrs->address_hi << 8);
+        ch->cur_nbytes = ch->nbytes = rgstrs->length_lo | (rgstrs->length_hi << 8);
+        I8080APUDPCMChannelPreFetch(ch);
+    }
+}
+
+static inline
+SInt16
+I8080APUDPCMChannelSample(
+    I8080APUDPCMChannelState_t      *ch
+)
+{
+    SInt16                          sample;
+    
+    if ( ++ch->tick == ch->length ) {
+        if ( *ch->sample_ptr & ch->sample_mask ) ch->sample++;
+        else ch->sample--;
+        ch->tick = 0;
+        
+        if ( (ch->sample_mask <<= 1) == 0 ) {
+            if ( (++ch->sample_ptr == ch->sample_end) ) {
+                /* Prefetch next set of sample bytes; if nothing is left, that's the end */
+                if ( I8080APUDPCMChannelPreFetch(ch) == 0 ) {
+                    if ( ch->is_looped ) {
+                        /* reset the sample sequence */
+                        ch->cur_addr = ch->addr, ch->cur_nbytes = ch->nbytes;
+                        ch->sample = 0;
+                        I8080APUDPCMChannelPreFetch(ch);
+                    } else {
+                        /* mute the channel */
+                        ch->is_enabled = false;
+                    }
+                }
+            } else {
+                /* Next byte in prefetch buffer */
+                ch->sample_mask = 0x1;
+            }
+        }
+    }
+    sample = ch->sample;
+    if ( sample > 16 ) sample = 16;
+    else if ( sample < -17 ) sample = -17;
+    return sample * 0x400;
+}
+   
+//
+
+static inline
 void
 I8080APUInit(
     I8080APUState_t                     *apu,
@@ -494,6 +596,7 @@ I8080APUInit(
     I8080APUTriangleChannelInit(&apu->triangle_0, &rgstrs->triangle_0, &rgstrs->master);
     I8080APUTriangleChannelInit(&apu->triangle_1, &rgstrs->triangle_1, &rgstrs->master);
     I8080APUNoiseChannelInit(&apu->noise, &rgstrs->noise, &rgstrs->master);
+    I8080APUDPCMChannelInit(&apu->dpcm, &rgstrs->dpcm, &rgstrs->master);
 }
 
 static inline
@@ -517,6 +620,7 @@ I8080APUSample(
     if ( apu->triangle_0.is_enabled && apu->triangle_0.envelope.level && (apu->triangle_0.frequency.length >= 8) ) mixed_sample += I8080APUTriangleChannelSample(&apu->triangle_0);
     if ( apu->triangle_1.is_enabled && apu->triangle_1.envelope.level && (apu->triangle_1.frequency.length >= 8) ) mixed_sample += I8080APUTriangleChannelSample(&apu->triangle_1);
     if ( apu->noise.is_enabled && apu->noise.envelope.level ) mixed_sample += I8080APUNoiseChannelSample(&apu->noise);
+    if ( apu->dpcm.is_enabled ) mixed_sample += I8080APUDPCMChannelSample(&apu->dpcm);
     if ( mixed_sample && apu->max_level ) {
         mixed_sample *= apu->max_level;
         mixed_sample /= INT16_MAX;
@@ -571,6 +675,7 @@ I8080APUContextReset(
     
     memset(&apu->rgstrs, 0, sizeof(apu->rgstrs));
     memset(&apu->apu_state, 0, sizeof(apu->apu_state));
+    apu->apu_state.dpcm.sysmem = mem;
     if ( ! apu->audio_queue ) {
         int                         buffer_idx;
         AudioStreamBasicDescription audio_format = {
@@ -684,6 +789,10 @@ I8080APUContextWrite(
             case I8080_APU_NOISE_RGSTRS_ADDR:
                 /* Reload noise: */
                 I8080APUNoiseChannelInit(&apu->apu_state.noise, &apu->rgstrs.noise, &apu->rgstrs.master);
+                break;
+            case I8080_APU_DPCM_RGSTRS_ADDR:
+                /* Reload DPCM: */
+                I8080APUDPCMChannelInit(&apu->apu_state.dpcm, &apu->rgstrs.dpcm, &apu->rgstrs.master);
                 break;
         }
         return true;
