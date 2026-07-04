@@ -189,6 +189,69 @@ In the early days of video gaming RAM was a precious resource, and having that m
 
 So why not take what I know of the NES PPU and use it to add a PPU to my 8080 emulator?  I settled on a fixed screen size of 128x64 pixels; 8x4 tiles (terminal windows pixels are rectangular, longer in the y-direction) with 2 BPP; 8 active color palettes (without restriction on some being for sprites and some for backgrounds); room for 32 of those 8x4 tiles; and room for 52 sprites.  By having just 32 tiles and 8 palettes, every tile reference can be an 8-bit value and there is no need for a separate attribute table for palette selection.  Likewise, sprites and backgrounds can make use of all 8 palettes, not just 4 each as in the NES.
 
+#### Audio Processing Unit (APU)
+
+If we have a PPU, then naturally we should also have an audio counterpart, right?  The PPU leverages curses, a cross-platform library, for "pixel" graphics that work locally or across SSH connections; there is no such library for audio.  Once upon a time I developed a carillon software suite for the University that used standard Mac OS X audio libraries for playback of (AIFF-encoded) chimes and songs.  Those libraries are still more-of-less present, and as I'm developing this on a Mac it seemed the natural fast-track to getting an APU implemented.
+
+My first foray into 6502 assembly on a Laser 128+ back in the late 80's was a musical note generator:  the two index registers were loaded with a coarse- and fine-grain timer value and a two-level loop counted them down, writing to a memory register connected to the speaker driver to physically produce sound:
+
+```
+        LDY     $20         ; coarse-grain timer (duration)
+DUR:    LDX     $21         ; fine-grain timer (period)
+        STA     $C030       ; click the speaker
+FREQ:   DEX
+        BNE     FREQ        ; count-down the fine-grain timer
+        DEY
+        BNE     DUR         ; count-down the coarse-grain timer
+```
+
+There was no Internet at the time, so I didn't really know how to describe this code:  today I know that it is a 50% duty-cycle pulse wave generator with a period of the value present in `$21`.  There were other sound generators I eventually found in Nibble magazine and in games I disassembled that hinted at more complex schemes, e.g.
+
+```
+        LDY     $20         ; coarse-grain timer (duration)
+DUR:    LDX     $21         ; fine-grain timer (duty-on period)
+ON:     STA     $C030       ; speaker toggle (4 cycles)
+        DEC                 ; (2 cycles)
+        BNE     ON          ; count-down the fine-grain (duty-on) timer (3 cycles)
+        LDX     $22         ; fine-grain timer (duty-off period)
+OFF:    NOP                 ; keep timing the same
+        NOP                 ; (2 cycles each)
+        DEC                 ; (2 cycles)
+        BNE     OFF         ; count-down the fine-grain (duty-off) timer (3 cycles)
+        DEY
+        BNE     DUR         ; count-down the coarse-grain timer
+```
+
+Since the inner loops are 9 cycles, the speaker is "on" at a frequency of about 11111 Hz, not continuously.  The period is the sum of `$21` and `$22` and there is no sense of volume, since the speaker has no variability to the amplitude of the click it produces.
+
+The [NES DEV wiki](https://www.nesdev.org/wiki/APU) was invaluable in describing how a very simple audio coprocessor could work.  The I8080 APU created for this project features:
+
+- (2) pulse wave channels:
+    - (16) duty-cycle profiles
+    - 16- or 8-bit envelope (volume) with optional fade and loop
+    - 16-bit value or 8-bit indexed value frequency period with optional sweep
+    - 16- or 8-bit optional duration
+- (2) triangle wave channels:
+    - (2) 32-step sampling waveforms: triangle or sawtooth
+    - 16- or 8-bit envelope (volume) with optional fade and loop
+    - 16-bit value or 8-bit indexed value frequency period
+    - 16- or 8-bit optional duration
+- (1) noise channel:
+    - 16-bit LFSR with choice of short or long cycling
+    - (16) cycling periods (corresponding with frequency)
+    - 16- or 8-bit envelope (volume) with optional fade and loop
+    - 16- or 8-bit optional duration
+- (1) delta pulse code modulation (DPCM) channel:
+    - (16) sample rates (as divisions of base rate of 44100 Hz)
+    - 16-byte sample buffer filled from system RAM
+    - optional looping
+
+The DPCM is very neat in concept, but in practice it turns out to be extremely limited due to its 1-bit increase/decrease level behavior.  Audio waveforms with high-frequency or large-delta jumps in level are impossible to capture with the format.  The fact that there is no "do nothing" sample state means that sustaining a sampling level requires oscillation around that value:  silence cannot be a sequence of zeroes, rather a sequence of ones and zeroes, and when the samples are amplified to be audible a noticeable high-frequency undertone can be present.
+
+The 8-bit mode for envelope, frequency, and duration can be configured by the program running in the emulator; the APU starts in 16-bit mode for all three.  Programs that do not require fine-grain control over these values can cut their clock cycles by 50% by using 8-bit mode.  For frequencies, the 8-bit value is an index into a table of 16-bit values for specific musical notes and quarter-steps between them.  In 16-bit mode, the frequency is the 12.4 fixed-point value indicating the number of 44100 Hz cycles corresponding to the period of the tone.
+
+The APU can be mapped to any location in system RAM.  Its registers occupy the leading 45 bytes.
+
 #### Bank-Switched Memory expansion
 
 What happens if a program needs more code or more data than the 64 KiB of RAM can hold?  The Apple IIe and IIc added a second bank of 64 KiB of RAM for a total of 128 KiB, but the 6502 was only capable of 16-bit addressing — so how did the other bank get accessed?  The short answer is that registers were altered to change which 64 KiB of RAM was attached to the address bus:  based on a "switch" the address `$2000` refers to two unique bytes of RAM.  The NES used bank-switching to, for example, switch which graphical tiles were visible in the system address space:  no need to copy 4 KiB of data around RAM, just alter what data in cartridge ROM is accessible at `$XXXX` on the system address bus.
