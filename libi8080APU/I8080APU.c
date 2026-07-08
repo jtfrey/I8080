@@ -13,8 +13,8 @@
 
 #include <AudioToolbox/AudioToolbox.h>
 
-#define I8080_APU_BUFFER_COUNT  4
-#define I8080_APU_BUFFER_SIZE   1024
+#define I8080_APU_BUFFER_COUNT  2
+#define I8080_APU_BUFFER_SIZE   2048
 #define I8080_APU_SAMPLE_RATE   44100
 
 /**
@@ -273,7 +273,7 @@ I8080APUPulseChannelInit(
                                         (rgstrs->envlp_level_lo | (rgstrs->envlp_level_hi << 8))
                                     );
         } else {
-            ch->envelope.level = INT16_MAX;
+            ch->envelope.level = 0x4000;
             ch->envelope.is_looped = rgstrs->is_envlp_looped;
             ch->envelope.length = ( master->is_8bit_envelope ? 
                                         (rgstrs->envlp_level_lo) :
@@ -321,7 +321,7 @@ I8080APUPulseChannelSample(
                 ch->envelope.level -= 0x20;
             }
             if ( ! ch->envelope.level && ch->envelope.is_looped ) {
-                ch->envelope.level = INT16_MAX;
+                ch->envelope.level = 0x4000;
             }
         }
     }
@@ -370,7 +370,7 @@ I8080APUTriangleChannelInit(
                                         (rgstrs->envlp_level_lo | (rgstrs->envlp_level_hi << 8))
                                     );
         } else {
-            ch->envelope.level = INT16_MAX;
+            ch->envelope.level = 0x4000;
             ch->envelope.is_looped = rgstrs->is_envlp_looped;
             ch->envelope.length = ( master->is_8bit_envelope ? 
                                         (rgstrs->envlp_level_lo) :
@@ -411,7 +411,7 @@ I8080APUTriangleChannelSample(
                 ch->envelope.level -= 0x20;
             }
             if ( ! ch->envelope.level && ch->envelope.is_looped ) {
-                ch->envelope.level = INT16_MAX;
+                ch->envelope.level = 0x4000;
             }
         }
     }
@@ -422,8 +422,7 @@ I8080APUTriangleChannelSample(
             ch->sequence.step = (ch->sequence.step + 1) % 32;
         }
         /* Generate sample: */
-        sample *= ch->sequence.sequence[ch->sequence.step];
-        sample /= 15;
+        sample = (sample * ch->sequence.sequence[ch->sequence.step]) / 15;
     }
     return (SInt16)sample;
 }
@@ -446,7 +445,7 @@ I8080APUNoiseChannelInit(
                                         (rgstrs->envlp_level_lo | (rgstrs->envlp_level_hi << 8))
                                     );
         } else {
-            ch->envelope.level = INT16_MAX;
+            ch->envelope.level = 0x4000;
             ch->envelope.is_looped = rgstrs->is_envlp_looped;
             ch->envelope.length = ( master->is_8bit_envelope ? 
                                         (rgstrs->envlp_level_lo) :
@@ -485,7 +484,7 @@ I8080APUNoiseChannelSample(
                 ch->envelope.level -= 0x20;
             }
             if ( ! ch->envelope.level && ch->envelope.is_looped ) {
-                ch->envelope.level = INT16_MAX;
+                ch->envelope.level = 0x4000;
             }
         }
     }
@@ -621,9 +620,8 @@ I8080APUSample(
     if ( apu->triangle_1.is_enabled && apu->triangle_1.envelope.level && (apu->triangle_1.frequency.length >= 8) ) mixed_sample += I8080APUTriangleChannelSample(&apu->triangle_1);
     if ( apu->noise.is_enabled && apu->noise.envelope.level ) mixed_sample += I8080APUNoiseChannelSample(&apu->noise);
     if ( apu->dpcm.is_enabled ) mixed_sample += I8080APUDPCMChannelSample(&apu->dpcm);
-    if ( mixed_sample && apu->max_level ) {
-        mixed_sample *= apu->max_level;
-        mixed_sample /= INT16_MAX;
+    if ( mixed_sample ) {
+        mixed_sample = ((mixed_sample * apu->max_level) / 6) / INT16_MAX;
         if ( mixed_sample < -apu->max_level ) mixed_sample = -apu->max_level;
         else if ( mixed_sample > apu->max_level ) mixed_sample = apu->max_level;
     }
@@ -769,6 +767,13 @@ I8080APUContextWrite(
             case I8080_APU_MASTER_RGSTRS_ADDR:
                 /* A change to the master register triggers a reload of all channels: */
                 I8080APUInit(&apu->apu_state, &apu->rgstrs);
+                break;
+            case I8080_APU_MASTER_RGSTRS_ADDR+1:
+            case I8080_APU_MASTER_RGSTRS_ADDR+2:
+                apu->apu_state.max_level = INT16_MAX & ( apu->rgstrs.master.is_8bit_envelope ?
+                        (apu->rgstrs.master.master_level_lo << 8) :
+                        (apu->rgstrs.master.master_level_lo | (apu->rgstrs.master.master_level_hi << 8))
+                    );
                 break;
             case I8080_APU_PULSE_0_RGSTRS_ADDR:
                 /* Reload pulse 0: */
