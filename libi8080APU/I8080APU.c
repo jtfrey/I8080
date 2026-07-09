@@ -98,6 +98,7 @@ typedef struct {
     uint16_t        tick;                   /*!< updated on each 44100 Hz cycle */
     uint16_t        shift_register;         /*!< 16-bit value that accrues pseudo-randomness as the noise channel is sampled */
     uint8_t         period;                 /*!< clock a shift-register update once the \p tick reaches this value */
+    uint8_t         nsamples;               /*!< how many samples to average during a clock */
     bool            is_short_loop;          /*!< true = select the 93-element random cycle, false = select the 32767-element cycle */
 } I8080APUNoiseState_t;
 
@@ -251,8 +252,33 @@ static const int16_t I8080APUSawtoothSteps[32] = {
                     -1,  -2,  -3,  -4,  -5,  -6,  -7,  -8,
                     -9, -10, -11, -12, -13, -14, -15,  15 };
 
+/*
+        APU cycle   CPU cycle   Shift Hz    Shift/sample    44100 period    Rounded
+        2           4           447443.25   10.15           0.10        
+        4           8           223721.63   5.07            0.20        
+        8           16          111860.81   2.54            0.39        
+        16          32          55930.41    1.27            0.79        
+        32          64          27965.20    0.63            1.58            1
+        48          96          18643.47    0.42            2.37            2
+        64          128         13982.60    0.32            3.15            3
+        80          160         11186.08    0.25            3.94            4
+        101         202         8860.26     0.20            4.98            5
+        127         254         7046.35     0.16            6.26            6
+        190         380         4709.93     0.11            9.36            9
+        254         508         3523.18     0.08            12.52           13
+        381         762         2348.78     0.05            18.78           19
+        508         1016        1761.59     0.04            25.03           25
+        1017        2034        879.93      0.02            50.12           50
+        2034        4068        439.96      0.01            100.24          100
+ */
+
+/* In units of number of NES CPU clock cycles, NTSC 1.789773 MHz */
 static const uint16_t I8080APUNoisePeriods[16] = {
-    2, 3, 7, 19, 23, 29, 37, 41, 47, 53, 59, 67, 71, 79, 89, 97
+    1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 9, 13, 19, 25, 50, 100
+};
+
+static const uint16_t I8080APUNoiseSubFreqCounts[16] = {
+    10, 5, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 };
 
 //
@@ -458,10 +484,11 @@ I8080APUNoiseChannelInit(
                 (rgstrs->duration_lo | (rgstrs->duration_hi << 8));
         ch->duration.is_fixed_duration = (ch->duration.length != 0);
         
+        ch->noise.nsamples = I8080APUNoiseSubFreqCounts[rgstrs->period];
         ch->noise.period = I8080APUNoisePeriods[rgstrs->period];
         ch->noise.is_short_loop = rgstrs->is_short_loop;
         srandom(time(NULL));
-        ch->noise.shift_register = random() & INT16_MAX;
+        ch->noise.shift_register = 1;
         ch->noise.tick = 0;
     }
 }
@@ -488,7 +515,22 @@ I8080APUNoiseChannelSample(
             }
         }
     }
-    if ( (sample = ch->envelope.level) ) {
+    if ( ch->noise.period == 1 ) {
+        int             nsamples = ch->noise.nsamples;
+        uint16_t        lfsr = ch->noise.shift_register;
+        SInt16          combined_sample = 0;
+        
+        while ( nsamples-- ) {
+            bool            bit0 = lfsr & 0x1;
+            bool            tgt = 0x1 & ((ch->noise.is_short_loop) ?
+                                        (lfsr >> 6) :
+                                        (lfsr >> 1));
+            lfsr = (lfsr >> 1) | ((bit0 ^ tgt) << 14);
+            combined_sample += (lfsr & 0x1) ? 1 : -1;
+        }
+        ch->noise.shift_register = lfsr;
+        sample = (combined_sample * ch->envelope.level) / ch->noise.nsamples;
+    } else {
         if ( ++ch->noise.tick == ch->noise.period ) {
             bool            bit0 = ch->noise.shift_register & 0x1;
             bool            tgt = 0x1 & ((ch->noise.is_short_loop) ?
@@ -497,7 +539,7 @@ I8080APUNoiseChannelSample(
             ch->noise.shift_register = (ch->noise.shift_register >> 1) | ((bit0 ^ tgt) << 14);
             ch->noise.tick = 0;
         }
-        if ( ch->noise.shift_register & 0x1 ) sample = 0;
+        sample = ( ch->noise.shift_register & 0x1 ) ? ch->envelope.level : 0;
     }
     return sample;
 }
