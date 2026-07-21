@@ -248,9 +248,173 @@ The [NES DEV wiki](https://www.nesdev.org/wiki/APU) was invaluable in describing
 
 The DPCM is very neat in concept, but in practice it turns out to be extremely limited due to its 1-bit increase/decrease level behavior.  Audio waveforms with high-frequency or large-delta jumps in level are impossible to capture with the format.  The fact that there is no "do nothing" sample state means that sustaining a sampling level requires oscillation around that value:  silence cannot be a sequence of zeroes, rather a sequence of ones and zeroes, and when the samples are amplified to be audible a noticeable high-frequency undertone can be present.
 
-The 8-bit mode for envelope, frequency, and duration can be configured by the program running in the emulator; the APU starts in 16-bit mode for all three.  Programs that do not require fine-grain control over these values can cut their clock cycles by 50% by using 8-bit mode.  For frequencies, the 8-bit value is an index into a table of 16-bit values for specific musical notes and quarter-steps between them.  In 16-bit mode, the frequency is the 12.4 fixed-point value indicating the number of 44100 Hz cycles corresponding to the period of the tone.
+The 8-bit mode for envelope, frequency, and duration can be configured by the program running in the emulator; the APU starts in 16-bit mode for all three.  Programs that do not require fine-grain control over these values can cut their clock cycles by 50% by using 8-bit mode.  For frequencies, the 8-bit value is an index into a table of 16-bit values for specific musical notes and half- or quarter-steps between them:
+
+| Index  |   Freq/Hz | Name |
+| :----: | --------: | :--- |
+| `0x00` |   `32.70` | C1   |
+| `0x02` |   `34.65` | C#1  |
+| `0x04` |   `36.71` | D1   |
+| `0x06` |   `38.89` | D#1  |
+| `0x08` |   `41.20` | E1   |
+| `0x0A` |   `43.65` | F1   |
+| `0x0C` |   `46.25` | F#1  |
+| `0x0E` |   `49.00` | G1   |
+| `0x10` |   `51.91` | G#1  |
+| `0x12` |   `55.00` | A1   |
+| `0x14` |   `58.27` | A#1  |
+| `0x16` |   `61.74` | B1   |
+| `0x1A` |   `65.41` | C2   |
+| `0x1E` |   `69.30` | C#2  |
+| `0x22` |   `73.42` | D2   |
+| `0x26` |   `77.78` | D#2  |
+| `0x2A` |   `82.41` | E2   |
+| `0x2E` |   `87.31` | F2   |
+| `0x32` |   `92.50` | F#2  |
+| `0x36` |   `98.00` | G2   |
+| `0x3A` |  `103.83` | G#2  |
+| `0x3E` |  `110.00` | A2   |
+| `0x42` |  `116.54` | A#2  |
+| `0x46` |  `123.47` | B2   |
+| `0x4A` |  `130.81` | C3   |
+| `0x4E` |  `138.59` | C#3  |
+| `0x52` |  `146.83` | D3   |
+| `0x56` |  `155.56` | D#3  |
+| `0x5A` |  `164.81` | E3   |
+| `0x5E` |  `174.61` | F3   |
+| `0x62` |  `185.00` | F#3  |
+| `0x66` |  `196.00` | G3   |
+| `0x6A` |  `207.65` | G#3  |
+| `0x6E` |  `220.00` | A3   |
+| `0x72` |  `233.08` | A#3  |
+| `0x76` |  `246.94` | B3   |
+| `0x7A` |  `261.63` | C4   |
+| `0x7E` |  `277.18` | C#4  |
+| `0x82` |  `293.66` | D4   |
+| `0x86` |  `311.13` | D#4  |
+| `0x8A` |  `329.63` | E4   |
+| `0x8E` |  `349.23` | F4   |
+| `0x92` |  `370.00` | F#4  |
+| `0x96` |  `392.00` | G4   |
+| `0x9A` |  `415.30` | G#4  |
+| `0x9E` |  `440.00` | A4   |
+| `0xA2` |  `466.16` | A#4  |
+| `0xA6` |  `493.88` | B4   |
+| `0xAA` |  `523.25` | C5   |
+| `0xAE` |  `554.37` | C#5  |
+| `0xB2` |  `587.33` | D5   |
+| `0xB6` |  `622.25` | D#5  |
+| `0xBA` |  `659.26` | E5   |
+| `0xBE` |  `698.46` | F5   |
+| `0xC2` |  `739.99` | F#5  |
+| `0xC6` |  `783.99` | G5   |
+| `0xCA` |  `830.61` | G#5  |
+| `0xCE` |  `880.00` | A5   |
+| `0xD2` |  `932.33` | A#5  |
+| `0xD6` |  `987.77` | B5   |
+| `0xDA` | `1046.50` | C6   |
+| `0xDE` | `1108.73` | C#6  |
+| `0xE2` | `1174.66` | D6   |
+| `0xE6` | `1244.51` | D#6  |
+| `0xEA` | `1318.51` | E6   |
+| `0xEE` | `1396.91` | F6   |
+| `0xF2` | `1479.98` | F#6  |
+| `0xF6` | `1567.98` | G6   |
+| `0xF8` | `1661.22` | G#6  |
+| `0xFA` | `1760.00` | A6   |
+| `0xFC` | `1864.66` | A#6  |
+| `0xFE` | `1975.53` | B6   |
+
+Quarter-steps are present between cited indices for notes above B1 and below G6:  e.g. a quarter-tone below C5 is `0xA9`.
+
+In 16-bit mode, the frequency is the 12.4 fixed-point value indicating the number of 44100 Hz cycles corresponding to the period of the tone.  For a middle C (C4) the frequency is 261.63 Hz; in 12.4 fixed-point that's `trunc(261.63*16) = 0x105A` (4186 decimal) so `0x5A` would be stored to the low-byte frequency register and `0x10` to the high-byte register.
 
 The APU can be mapped to any location in system RAM.  Its registers occupy the leading 45 bytes.
+
+##### MUSEQ
+
+As part of the BLOX video game project, some code was needed to manage the playing of background music during the game.  Any music needs a timer with which notes are synchronized:  as with the NES that served as inspiration for the PPU and APU devices, the vertical blank (VBL) interrupt that happens reliably at a rate of 60 Hz makes sense, though for initial development of this code a realtime clock timer device set to 30 Hz was used.  That's right, 30 Hz:  that's fast enough updating to handle 1/32 note durations at 150 BPM and 4/4 time, and it means we only have to spend time on audio updates every other graphical frame.  If we get crunched for time w.r.t. hit detection or animation, we can drop that into the non-audio frames.  Hopefully not needed, but good to design with it in mind.
+
+The **MUSEQ** (MUSical SEQuencer) code implements a multi-voice programming language.  A *clip* is a sequence of notes and rests; a *track* is a sequence of references to clips played once or multiple times and in order, possibly looped.  Each audio channel has a track associated with it during playback:  the two pulse channels, one triangle channel, and the noise channel, providing up to four voices.  A function is provided to progress each channel one 30 Hz step through its active clip and track.  This function updates audio registeres in the APU but *does not update the state register*.  Since changes are only adopted by the APU when the state register is written, changes are cached in memory; subsequently, at the start of VBL, changes to the APU state registers are written and the APU will alter its audio rendering accordingly.
+
+###### Clips
+
+Clips exist as a sequence of indicator bytes accompanied by supporting data.  The indicator byte details which data are present for the step (additional data summarized in order):
+
+- End of sequence
+- Replay the last note type:  duration byte
+- Silence the channel (a rest):  duration byte
+- Pulse channels:
+    - Alter the note profile: duration byte, …
+        - Frequency sweep period:  … byte = 44100 Hz cycles between frequency changes, …
+        - Frequency:  … byte = note frequency index, …
+        - Envelope: … byte = envelope level or cycles between level drop, …
+        - Frequency shift and duty cycle: … byte = frequency shift divider in high nibble, duty cycle index in low nibble, …
+        - State:  byte = the updated value for the channel's state register
+- Triangle/sawtooth channel:
+    - Alter the note profile: duration byte, …
+        - Frequency:  … byte = note frequency index, …
+        - Envelope: … byte = envelope level or cycles between level drop, …
+        - State:  byte = the updated value for the channel's state register
+- Noise channel:
+    - Alter the sound profile: duration byte, …
+        - Envelope: … byte = envelope level or cycles between level drop, …
+        - State:  byte = the updated value for the channel's state register
+
+Durations are in units of cycles at 30 Hz; at 150 BPM and 4/4 time, a quarter note lasting a single beat equates to:
+
+```
+150 beats/min * min/60 s = 2.5 beats/s
+1/4 note = 1 beat, ∴ 1 beat * (s / 2.5 beats) = 0.4 s
+0.4 s * (30 Hz) = 0.4 s * (30 cycles/s) = 12 cycles
+```
+
+| Duration | Cycles |
+| -------: | -----: |
+|        4 | `0xC0` |
+|        3 | `0x90` |
+|        2 | `0x60` |
+|        1 | `0x30` |
+|      1/2 | `0x18` |
+|      1/4 | `0x0C` |
+|      1/8 | `0x06` |
+|     1/16 | `0x03` |
+|     1/32 | `0x01` |
+
+Constants for durations and indicator bits are defined in the `museq.inc` file.
+
+###### Tracks
+
+Tracks are defined as a sequence of command bytes and supporting data (using a `<bytes|symbol>` format):
+
+| Mnemonic/Opcode | Arguments         | Description |
+| --------------- | 
+| `STP`/`0x00`    |                   | Halt audio for the channel. |
+| `JMP`/`0x01`    | `<2|ADDR>`        | Set the track pointer to `ADDR` and execute the command(s) starting there |
+| `NXC_N`/`0x02`  | `<2|ADDR>, <1|N>` | Set the track's clip pointer to `ADDR` and repeat count to `N` |
+| `NXC_1`/`0x06`  | `<2|ADDR>`        | Set the track's clip pointer to `ADDR` and repeat count to 1 |
+| `BTL_N`/`0x04`  | `<1|N>`           | Begin track loop, setting the loop counter to `N` |
+| `BTL_2`/`0x0C`  |                   | Begin track loop, setting the loop counter to 1 |
+| `DBTL`/`0x08`   |                   | Decrement track loop counter and branch if ≥ 0 |
+
+For track loops it doesn't make much sense to have an implicit count of 1, so all loop counters are the number of passes minus 1, e.g. a value of 5 equates with 6 repeats of the body of the loop.  A simple repeated harmony with a bridge might be programmed as:
+
+```
+$4000: 0x02 0x10 0x40 0x02         NXC_N   MELODY_0, 2
+$4004: 0x06 0x20 0x40              NXC_1   MELODY_1
+$4007: 0x01 0x00 0x40              JMP     $4100
+```
+
+Where the `MELODY_0` et al. labels represent the address of a clip.  A slightly more complex sequence which has a secondary bridge between repeats of the sequence above:
+
+```
+$4000: 0x04 0x02                BTL_N   2
+$4002: 0x02 0x10 0x40 0x02      NXC_N   MELODY_0, 2
+$4006: 0x06 0x20 0x40           NXC_1   MELODY_1
+$4009: 0x08                     DBTL
+$4006: 0x06 0x30 0x40           NXC_1   MELODY_2
+$400A: 0x01 0x00 0x40           JMP     $4100
+```
 
 #### Bank-Switched Memory expansion
 

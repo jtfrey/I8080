@@ -15,8 +15,8 @@
 #include <pthread.h>
 #include <locale.h>
 
-#define I8080_PPU_RENDER_DURATION       13333.33
-#define I8080_PPU_VBLANK_DURATION        3333.34
+#define I8080_PPU_RENDER_DURATION       13333.33        /* 80% of frame time = 26666 instr cycles */
+#define I8080_PPU_VBLANK_DURATION        3333.34        /* 20% of frame time = 6666 instr cycles */
 #define I8080_PPU_FULL_DURATION         I8080_PPU_RENDER_DURATION + I8080_PPU_VBLANK_DURATION
 
 #define I8080_PPU_MAXCOLOR      64
