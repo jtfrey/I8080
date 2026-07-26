@@ -107,52 +107,24 @@ INPUT_BUFFER_LEN    EQU     (INPUT_BUFFER_END - INPUT_BUFFER)
 ; we will respond, so we won't bother enabling interrupts on the CPU
 ; (the boot vector disabled them).  Just go right into the main loop.
 ;
-MONITOR:            MVI     A, '>'                  ; Display a simple prompt
-                    OUT     TTY_OUT
-                    MVI     A, ' '
-                    OUT     TTY_OUT
-                    LXI     H, INPUT_BUFFER         ; HL <= input buffer pointer
-                    MVI     C, INPUT_BUFFER_LEN     ; C <= character limit counter
-$$GETKEY:           IN      TTY_IN
-                    CPI     '_'                 	; Underscore = backspace
-                    JNZ     $$NOT_BACKSPACE     	; Not a backspace…
-                    MOV     A, C                	; A <= C
-                    ORA     A                   	; A <= A | A, set flags
-                    JZ      $$GETKEY            	; C is zero, no more backspacing to do
-                    DCX     H                   	; Decrement input buffer pointer in HL…
-                    INR     C                   	; …increment character limit counter in C…
-                    JMP     $$GETKEY            	; …then go get another key.
-$$NOT_BACKSPACE:    CPI     '\n'                	; Newline?
-                    JZ      $$PARSE_CMD         	; Go parse the command that was typed
-                    MOV     M, A                	; Store it in the input buffer
-                    OUT     TTY_OUT             	; Echo the character to the TTY
-                    INX     H                   	; Advance input buffer pointer…
-                    DCR     C                   	; …and decrement the character limit counter
-                    JNZ     $$GETKEY            	; If the character limit counter has not reached
-                                                	; zero, go get another	; otherwise, parse now
-                    MVI     A, '\n'             	; Make sure a newline is in A to be output
-                                                	; before parsing
-$$PARSE_CMD:        OUT     TTY_OUT             	; Output the newline before doing anything else
-                    MVI     A, INPUT_BUFFER_LEN     ; Calculate how many characters are in the
-                                                    ; buffer by subtracting C from the limit
-                    SUB     C                   	; A = <limit> - C
-                    JZ      MONITOR             	; Empty buffer, start over
-                    MOV     C, A                    ; C <= number of characters
-                    LXI     H, INPUT_BUFFER     	; HL <= input buffer pointer
+MONITOR:            CALL    READ_LINE               ; Read the next line from the user
+                    ;
+                    ; HL will be pointing to the base of the input buffer
+                    ; and C will contain the character count
+                    ;
                     MVI     A, 00h                  ; Default the mode to single-character print
                     STA     MON_MODE
-                    ;
-                    ; At this point we're all set with the input buffer pointer
-                    ; in HL and the number of characters to process in C.  We
-                    ; must start by parsing an address.  But first, check any of
-                    ; the bare letter commands to which we respond:
-                    ;
-                    MOV     A, M                    ; First character into A
-                    CPI     'R'                     ; Is it a bare 'R' for [R]un?
-                    JZ      $$RUN_CMD               
+$$FIRST_CHAR:       MOV     A, M                    ; Get leading character(s) from the buffer
+                    CPI     ' '                     ; Whitespace?
+                    JNZ     $$BARE_COMMANDS
+                    INX     H
+                    DCR     C
+                    JZ      $$FIRST_CHAR            ; Discard all leading whitespace
+$$BARE_COMMANDS:    CPI     'R'                     ; Is it a bare 'R' for [R]un?
+                    JZ      $$RUN_CMD
                     CPI     'X'                     ; Is it a bare 'X' for e[X]it?
                     JNZ     $$INIT_PARSE
-                    HLT                             ; Halt the system
+                    HLT                             ; Halt the system (exit the emulator)
                     
 $$INIT_PARSE:       LXI     D, 0000h                ; We'll roll the parsed address into DE
 $$PARSE_ADDR:       CALL    PARSE_HEXDIGIT          ; Try to parse a hex digit
@@ -373,7 +345,80 @@ PRINT_HEXDIGIT:     ADI     '0'                     ; Shift up to '0'
                     ADI     007h                    ; Shift up to $41 for $3A et al.
 $$OUT:              OUT     TTY_OUT
                     RET
+;
+; READ_LINE
+;
+; Read characters from the TTY input, discarding
+; any invalid ASCII codes that are not part of any command.
+;
+READ_LINE:          MVI     A, '>'                  ; Display a simple prompt
+                    OUT     TTY_OUT
+                    MVI     A, ' '
+                    OUT     TTY_OUT
+                    LXI     H, INPUT_BUFFER
+$$GETCH:            IN      TTY_IN                  ; A <= next input character
+                    CPI     '\n'
+                    JNZ     $$CHECK_BACKSPACE       ; A newline signals end of line
+                    OUT     TTY_OUT
+                    JMP     $$RETURN                ; Echo the newline then exit the subroutine
+$$CHECK_BACKSPACE:  CPI     '_'
+                    JNZ     $$IS_VALID              ; Not an underscore, go to validity check
+                    CALL    IS_INPUT_EMPTY
+                    JZ      $$GETCH                 ; Already at the start of the buffer
+                    DCX     H                       ; Move back a character in the input buffer…
+                    JMP     $$GETCH                 ; Go get another character
 
+$$IS_VALID:         MOV     B, A                    ; B <= next input character
+                    LXI     D, VALID_CHARS          ; DE <= base pointer to valid char array
+                    
+$$CHECK_LOOP:       LDAX    D                       ; A <= next valid char for comparison
+                    ORA     A                       ; A <= A | A, set flags
+                    JZ      $$GETCH                 ; NUL terminator, this is not a valid char
+                    CMP     B                       ; A == B ?
+                    JZ      $$ADD_CHAR              ; Character in A matches B, valid!
+                    INX     D                       ; DE++
+                    JMP     $$CHECK_LOOP            ; Check the next valid char
+                    
+$$ADD_CHAR:         MOV     M, A                    ; Store the character in the 
+                    OUT     TTY_OUT                 ; Echo the character to the TTY
+                    INX     H                       ; Increment the input buffer pointer
+                    XRA     A
+                    CMP     L                       ; L == 0 (implying end of the buffer)?
+                    JNZ     $$GETCH                 ; …more characters to check.
+                    ; If we have reached the end of the buffer, fall through
+                    ; to the return code…
+$$RETURN:           CALL    INPUT_LEN
+                    JZ      READ_LINE               ; Zero length, just try again for a line
+                    MOV     C, A                    ; C <= A = number of characters in buffer
+                    LXI     H, INPUT_BUFFER         ; Reset the input buffer pointer for processing
+                    RET                             ; Zero will NOT be set
+VALID_CHARS:        DB      ' .0123456789:ABCDEFRX', 00h
+;
+; IS_INPUT_EMPTY
+;
+; Checks if HL points to the start of the input buffer.  The
+; Z flag will be set on return if it is.
+;
+; The A register is clobbered by this subroutine.
+;
+IS_INPUT_EMPTY:     MVI     A, (INPUT_BUFFER & 0FFh)
+                    CMP     L
+                    RET
+;
+; INPUT_LEN
+;
+; Computes the number of characters present in the input buffer
+; by subtracting the low-nibble of the base address of the
+; input buffer from the current value of L.
+;
+; The length is returned in the A register.  Flags will be set
+; by the ADD instruction so the caller can check for Z set/reset.
+;
+INPUT_LEN:          MVI     A, ~(INPUT_BUFFER & 0FFh) + 1
+                    ADD     L
+                    RET
+                    
+                    
 ;
 ; Align the image to a page boundary
 ;
