@@ -46,7 +46,7 @@ FF00:00
 0100:3E
 ```
 
-The monitor will retain the address as it's last-parsed address.
+The monitor will retain the address as its last-parsed address.
 
 ### Print memory range
 
@@ -62,7 +62,7 @@ Two addresses separated by a dot displays the bytes in that range of memory addr
 0118:01 2B 0C C3 0D 01 FE 0A
 ```
 
-The monitor will retain the starting address as it's last-parsed address.
+The monitor will retain the starting address as its last-parsed address.
 
 ### Set bytes in memory
 
@@ -73,7 +73,7 @@ A starting address followed by a colon is used to set a sequence of bytes in mem
 > FF08:FF EE DD C B A
 ```
 
-The monitor will retain the starting address of the last set command as it's last-parsed address.  Subsequently displaying that range of memory shows the bytes that were set:
+The monitor will retain the starting address of the last set command as its last-parsed address.  Subsequently displaying that range of memory shows the bytes that were set:
 
 ```
 > FF00.FF10
