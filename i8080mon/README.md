@@ -8,13 +8,12 @@ The *i8080mon* code is inspired by wozmon and implements a system monitor for th
 | :-------------- | :----------------------------- |
 | `$0000 - $003F` | Reset vectors                  |
 | `$0040`         | Monitor mode bitmask           |
-| `$0041 - $0042` | Monitor parsed address slot 0  |
-| `$0043 - $0044` | Monitor parsed address slot 1  |
-| `$0045`         | Monitor saved character slot   |
-| `$0046 - $00FF` | Monitor input buffer           |
+| `$0041 - $0042` | Monitor parsed address slot    |
+| `$0043`         | Monitor saved character slot   |
+| `$0044 - $00FF` | Monitor input buffer           |
 | `$0100 - $02FF` | Monitor program (plus padding) |
 
-The input buffer has a capacity of `$BA` (186) characters.
+The input buffer has a capacity of `$BC` (188) characters.
 
 ## Commands
 
@@ -90,7 +89,7 @@ Assuming machine code has been entered into memory (using set bytes commands), t
 > 0100R
 ```
 
-Since the *i8080mon* code is at `$0100` this command jumps back into the monitor entry point.  A full reset could be effected with:
+Since the *i8080mon* code is at `$0100` this command just jumps back into the monitor entry point.  A full reset could be effected with:
 
 ```
 > 0R
@@ -105,7 +104,7 @@ In the sections above it was noted that the print and set commands will have a l
 {HALT}
 ```
 
-Opcode `$76` at `$4000` in this session is `HLT`, and the bare `R` command executes the instruction at `$4000` and halts the machine.
+Opcode `$76` at `$4000` in this session is `HLT`, so the bare `R` command executes the instruction at `$4000` and halts the machine.
 
 ### Halt the machine
 

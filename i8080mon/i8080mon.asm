@@ -93,9 +93,8 @@ RST7_VECTOR:        DS      8
 ; There are another $C0 (192) bytes in the zero page.  We will use those
 ; for our input buffer and a few state variables.
 ;
-MON_MODE            DB      00h                 ; Mode:  bit 7 : 0=single byte, 1=address range
-MON_ADDR_0:         DW      0000h
-MON_ADDR_1:         DW      0000h
+MON_PMODE:          DB      00h                 ; Mode:  bit 7 : 0=single byte, 1=address range
+MON_ADDR:           DW      0000h
 MON_SAVED_CHAR:     DB      00h
 INPUT_BUFFER:       DS      (0100h - $)
 INPUT_BUFFER_END:
@@ -113,7 +112,7 @@ MONITOR:            CALL    READ_LINE               ; Read the next line from th
                     ; and C will contain the character count
                     ;
                     MVI     A, 00h                  ; Default the mode to single-character print
-                    STA     MON_MODE
+                    STA     MON_PMODE
 $$FIRST_CHAR:       MOV     A, M                    ; Get leading character(s) from the buffer
                     CPI     ' '                     ; Whitespace?
                     JNZ     $$BARE_COMMANDS
@@ -143,9 +142,7 @@ $$PARSE_ADDR:       CALL    PARSE_HEXDIGIT          ; Try to parse a hex digit
                     MOV     A, M                    ; A <= next character
                     JMP     $$PARSE_ADDR            ; Go back and do it again
                     
-$$GOT_ADDR:         XCHG                            ; HL <=> DE
-                    SHLD    MON_ADDR_0              ; MON_ADDR_0 <= HL = parsed 16-bit address
-                    XCHG                            ; DE <=> HL
+$$GOT_ADDR:         PUSH    D                       ; Push parsed address to the stack
                     
                     ;
                     ; We get here under two conditions; either
@@ -166,14 +163,9 @@ $$CONTINUE_PARSE:   CPI     'R'                     ; An 'R' appended to an addr
                     DCR     C                       ; …alter the input buffer pointer and limit…
                     JZ      $$PRINT_CMD             ; …and go do a standard print if no more chars.
                     MVI     A, 10000000b            ; Set mode to print range
-                    STA     MON_MODE
-                    XCHG                            ; HL <=> DE
-                    LHLD    MON_ADDR_0              ; Stash the address we already parsed…
-                    SHLD    MON_ADDR_1              ; …in the secondary address slot…
-                    XCHG                            ; DE <=> HL
+                    STA     MON_PMODE
                     MOV     A, M
-                    JNZ     $$PARSE_ADDR
-                    JMP     MONITOR                 ; Botched command, ignore it
+                    JMP     $$INIT_PARSE            ; Parse another address
                     
 $$CHECK_SET:        CPI     ':'                     ; Colon, for setting bytes?
                     JNZ     MONITOR                 ; If it's not a colon then this is a
@@ -183,10 +175,11 @@ $$CHECK_SET:        CPI     ':'                     ; Colon, for setting bytes?
 ;
 $$SET_CMD:          INX     H                       ; Increment input buffer pointer…
                     DCR     C                       ; …decrement the character limit counter…
-                    JZ      MONITOR                 ; …back to a prompt if nothing's left…
-                    XCHG                            ; …or shift the input buffer pointer to DE…
-                    LHLD    MON_ADDR_0              ; …load the target store address into HL…
-                    XCHG                            ; …then swap HL and DE again.
+                    JZ      MONITOR                 ; …back to a prompt if nothing's left.
+                    POP     D                       ; Restore the parsed address to DE…
+                    XCHG
+                    SHLD    MON_ADDR                ; …and stash a copy in case 'R' is used.
+                    XCHG
 $$READ_BYTE:        MOV     A, M                    ; A <= next character
                     CALL    PARSE_HEXDIGIT
                     JC      $$NEXT_BYTE             ; If CY is set, it wasn't a hex character
@@ -221,28 +214,29 @@ $$NEXT_BYTE:        INX     H                       ; Increment the input buffer
 ;
 ; Print bytes in memory
 ;
-$$PRINT_CMD:        LHLD    MON_ADDR_0              ; Load address 0 into HL
-                    XCHG                            ; DE <= address 0
-                    MVI     B, 00h                  ; Byte out counter
-                    LDA     MON_MODE                ; Load the print mode…
-                    ORA     A                       ; …and get the flags set…
-                    JM      $$PRINT_RANGE           ; M flag set, it's a range
-                    LXI     H, 1                    ; HL <= 1 byte
-                    XCHG                            ; HL holds base address, DE holds byte count
-                    JMP     $$PRINT_LOOP
-$$PRINT_RANGE:      LHLD    MON_ADDR_1              ; HL <= address 1 (start of range)
-                    MOV     A, H                    ; Component-wise negate…
+$$PRINT_CMD:        POP     H                       ; Last-pushed parsed address
+                    MVI     B, 00h                  ; Zero the byte-out counter
+                    LDA     MON_PMODE               ; Load the print mode…
+                    ORA     A                       ; …and get the M flag set.
+                    JM      $$PRINT_RANGE
+                    LXI     D, 1                    ; DE <= 1 (single byte)
+                    JMP     $$PRINT_INIT
+                    
+$$PRINT_RANGE:      POP     D                       ; First-parsed address is still on the stack
+                    PUSH    D                       ; We're going to destroy it, save a copy
+                    MOV     A, D                    ; Do the 2's complement…
                     CMA                             ;
-                    MOV     H, A                    ; …the bytes in H…
-                    MOV     A, L                    ; 
-                    CMA                             ; …and L…
-                    MOV     L, A                    ; 
-                    INX     H                       ; …then add 1 to get the 2's complement
-                                                    ;  for the sake of a 16-bit addition.
-                    DAD     D                       ; HL <= HL + DE = ~(start address) + end address
-                    XCHG                            ; DE now holds the byte count
-                    LHLD    MON_ADDR_1              ; HL <= address 1 (start of range)
-                    SHLD    MON_ADDR_0              ; Overwrite address 0 for the sake of any
+                    MOV     D, A                    ;  …of DE…
+                    MOV     A, E                    ;
+                    CMA                             ; …so we can add HL to it…
+                    MOV     E, A                    ;
+                    INX     D                       ; …to get 2nd address - 1st address
+                    DAD     D                       ; HL now contains the character count
+                    XCHG                            ; Now HL has the negated first-parsed address,
+                                                    ; and DE has the character count
+                    POP     H                       ; Get the base pointer back
+                                                    
+$$PRINT_INIT:       SHLD    MON_ADDR                ; Stash the address in case 'R' is used.
 $$PRINT_LOOP:       MOV     A, B
                     ORA     A
                     JNZ     $$SKIP_ADDRESS
@@ -279,7 +273,7 @@ $$PRINT_LOOP_NEXT:  INX     H
 ;
 ; Set program counter, run code
 ;
-$$RUN_CMD:          LHLD    MON_ADDR_0              ; HL <= last-parsed address
+$$RUN_CMD:          LHLD    MON_ADDR                ; HL <= last-parsed address
                     PCHL                            ; PC <= HL = last-parsed address
                                                     ; this implicitly jumps to that
                                                     ; address
@@ -363,7 +357,8 @@ $$GETCH:            IN      TTY_IN                  ; A <= next input character
                     JMP     $$RETURN                ; Echo the newline then exit the subroutine
 $$CHECK_BACKSPACE:  CPI     '_'
                     JNZ     $$IS_VALID              ; Not an underscore, go to validity check
-                    CALL    IS_INPUT_EMPTY
+                    MVI     A, (INPUT_BUFFER & 0FFh); A <= low byte of input buffer address
+                    CMP     L                       ; A == L (low byte of input buffer pointer)
                     JZ      $$GETCH                 ; Already at the start of the buffer
                     DCX     H                       ; Move back a character in the input buffer…
                     JMP     $$GETCH                 ; Go get another character
@@ -387,36 +382,13 @@ $$ADD_CHAR:         MOV     M, A                    ; Store the character in the
                     JNZ     $$GETCH                 ; …more characters to check.
                     ; If we have reached the end of the buffer, fall through
                     ; to the return code…
-$$RETURN:           CALL    INPUT_LEN
+$$RETURN:           MVI     A, ~(INPUT_BUFFER & 0FFh) + 1
+                    ADD     L                       ; A <= HL - base address of input buffer
                     JZ      READ_LINE               ; Zero length, just try again for a line
                     MOV     C, A                    ; C <= A = number of characters in buffer
                     LXI     H, INPUT_BUFFER         ; Reset the input buffer pointer for processing
                     RET                             ; Zero will NOT be set
 VALID_CHARS:        DB      ' .0123456789:ABCDEFRX', 00h
-;
-; IS_INPUT_EMPTY
-;
-; Checks if HL points to the start of the input buffer.  The
-; Z flag will be set on return if it is.
-;
-; The A register is clobbered by this subroutine.
-;
-IS_INPUT_EMPTY:     MVI     A, (INPUT_BUFFER & 0FFh)
-                    CMP     L
-                    RET
-;
-; INPUT_LEN
-;
-; Computes the number of characters present in the input buffer
-; by subtracting the low-nibble of the base address of the
-; input buffer from the current value of L.
-;
-; The length is returned in the A register.  Flags will be set
-; by the ADD instruction so the caller can check for Z set/reset.
-;
-INPUT_LEN:          MVI     A, ~(INPUT_BUFFER & 0FFh) + 1
-                    ADD     L
-                    RET
                     
                     
 ;
