@@ -44,6 +44,7 @@
 TTY_IN          EQU     0
 TTY_OUT         EQU     0
 
+                PAGE    0, 0
                 CPU     8080
                 ORG     0000h
 
@@ -82,13 +83,13 @@ BOOT_VECTOR:        DI                              ; [1B][ 4] disable interrupt
 ; The other 7 reset vectors are unused but this image will
 ; reserve space for each of them:
 ;
-RST1_VECTOR:        DS      8
-RST2_VECTOR:        DS      8
-RST3_VECTOR:        DS      8
-RST4_VECTOR:        DS      8
-RST5_VECTOR:        DS      8
-RST6_VECTOR:        DS      8
-RST7_VECTOR:        DS      8
+RST1_VECTOR:        DB      8 DUP (00h)
+RST2_VECTOR:        DB      8 DUP (00h)
+RST3_VECTOR:        DB      8 DUP (00h)
+RST4_VECTOR:        DB      8 DUP (00h)
+RST5_VECTOR:        DB      8 DUP (00h)
+RST6_VECTOR:        DB      8 DUP (00h)
+RST7_VECTOR:        DB      8 DUP (00h)
 ;
 ; There are another $C0 (192) bytes in the zero page.  We will use those
 ; for our input buffer and a few state variables.
@@ -96,7 +97,7 @@ RST7_VECTOR:        DS      8
 MON_PMODE:          DB      00h                 ; Mode:  bit 7 : 0=single byte, 1=address range
 MON_ADDR:           DW      0000h
 MON_SAVED_CHAR:     DB      00h
-INPUT_BUFFER:       DS      (0100h - $)
+INPUT_BUFFER:       DB      (0100h - $) DUP (00h)
 INPUT_BUFFER_END:
 INPUT_BUFFER_LEN    EQU     (INPUT_BUFFER_END - INPUT_BUFFER)
 
@@ -156,8 +157,12 @@ $$GOT_ADDR:         PUSH    D                       ; Push parsed address to the
                     ; If we get here then the next character is in A
                     ; already
 $$CONTINUE_PARSE:   CPI     'R'                     ; An 'R' appended to an address
-                    JZ      $$RUN_CMD
-                    CPI     '.'                     ; A '.' means a ranged byte print…
+                    JNZ     $$CHECK_DOT
+                    XCHG                            ; Move DE (parsed address) to HL…
+                    SHLD    MON_ADDR                ; …stash a copy in case 'R' is used again…
+                    PCHL                            ; …then set the PC from HL and jump to that
+                                                    ; address.
+$$CHECK_DOT:        CPI     '.'                     ; A '.' means a ranged byte print…
                     JNZ     $$CHECK_SET
                     INX     H                       ; In preparation for parsing another address…
                     DCR     C                       ; …alter the input buffer pointer and limit…
@@ -395,6 +400,5 @@ VALID_CHARS:        DB      ' .0123456789:ABCDEFRX', 00h
 ; Align the image to a page boundary
 ;
     IF ($ # 0100h) != 0
-                    DS      (0100h - ($ # 0100h) - 1)
-                    DB      0FFh
+                    DB      (0100h - ($ # 0100h)) DUP (00h)
     ENDIF
